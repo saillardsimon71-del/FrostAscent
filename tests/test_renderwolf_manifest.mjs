@@ -41,11 +41,11 @@ test("load manifest using an injected same-origin fetch", async () => {
   assert.equal(calls[0][1].credentials, "same-origin");
 });
 
-test("reject hostile manifest paths", () => {
+test("reject hostile manifest paths", async () => {
   const hostile = structuredClone(manifest);
   hostile.assets[0].url = "https://other-site.test/steal";
   assert.throws(() => pixiAssetAliases(hostile), /Invalid/);
-  assert.throws(() => loadRenderwolfManifest("https://elsewhere.test/manifest"), /same-origin/);
+  await assert.rejects(() => loadRenderwolfManifest("https://elsewhere.test/manifest"), /same-origin/);
 });
 
 test("reject duplicate asset identifiers", () => {
