@@ -62,7 +62,8 @@ def is_asset(name: str) -> bool:
 
 
 def sniff_type(path: Path, suffix: str) -> dict:
-    data = path.read_bytes()[:32]
+    with path.open("rb") as handle:
+        data = handle.read(32)
     ok = {
         ".png": data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR",
         ".jpg": data.startswith(b"\xff\xd8\xff"),
