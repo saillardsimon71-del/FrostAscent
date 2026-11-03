@@ -1,0 +1,14 @@
+{
+  "name": "renderwolf-slot-browser",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Explicit one-job Chromium browser connector for RenderWolf Slots Studio",
+  "scripts": {
+    "test": "node --test test-core.mjs",
+    "inspect": "node cli.mjs inspect --config selectors.local.json"
+  },
+  "dependencies": {
+    "playwright": "^1.56.0"
+  }
+}
