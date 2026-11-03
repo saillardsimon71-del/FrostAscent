@@ -1,0 +1,10 @@
+# Never commit exported proprietary game artwork or RenderWolf credentials.
+.env
+.env.*
+!.env.example
+*.zip
+*.rar
+renderwolf-exports/
+public/
+__pycache__/
+*.pyc
