@@ -18,6 +18,11 @@ import {
 } from "./core.mjs";
 import { loadRenderwolfStorageState } from "./session.mjs";
 
+function displayPageUrl(page) {
+  const url = new URL(page.url());
+  return url.origin + url.pathname; // Never print OAuth codes or URL fragments.
+}
+
 function required(config, key) {
   const selector = config.selectors[key];
   if (!selector) throw new Error("Missing selector '" + key + "' in config");
@@ -40,7 +45,7 @@ async function inspect(page) {
       text: (n.innerText || n.textContent || "").trim().slice(0, 100),
     })));
   // Never print form values, browser cookies or session tokens.
-  console.log(JSON.stringify({ url: page.url(), controls: rows }, null, 2));
+  console.log(JSON.stringify({ url: displayPageUrl(page), controls: rows }, null, 2));
 }
 
 async function pause(message) {
@@ -98,7 +103,7 @@ async function exportAsset(page, config, outputDir, metadata = {}) {
   const sha256 = digest.digest("hex");
   const receipt = {
     schemaVersion: 1, provider: "renderwolf-slots-studio-browser",
-    source: page.url(), downloadedFile: filename,
+    source: displayPageUrl(page), downloadedFile: filename,
     downloadedBytes: info.size, downloadedSha256: sha256,
     ...metadata,
     note: "Browser export, not proof of an official RenderWolf API.",
