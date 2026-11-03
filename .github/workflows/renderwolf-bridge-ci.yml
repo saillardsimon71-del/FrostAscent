@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - 'tools/renderwolf_*'
+      - 'tools/renderwolf-browser/**'
       - 'tests/test_renderwolf_*'
       - '.github/workflows/renderwolf-bridge-ci.yml'
   pull_request:
     paths:
       - 'tools/renderwolf_*'
+      - 'tools/renderwolf-browser/**'
       - 'tests/test_renderwolf_*'
       - '.github/workflows/renderwolf-bridge-ci.yml'
 
@@ -25,5 +27,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: JavaScript manifest adapter tests
-        run: node --test tests/test_renderwolf_manifest.mjs
+      - name: JavaScript manifest and browser core tests
+        run: node --test tests/test_renderwolf_manifest.mjs tools/renderwolf-browser/test-core.mjs
