@@ -8,3 +8,11 @@ renderwolf-exports/
 public/
 __pycache__/
 *.pyc
+
+# Never commit exported authenticated browser state (equivalent to passwords).
+renderwolf-session.json
+*-session.json
+*.storage-state.json
+selectors.local.json
+tools/renderwolf-browser/.auth/
+tools/renderwolf-browser/prompt*.txt
