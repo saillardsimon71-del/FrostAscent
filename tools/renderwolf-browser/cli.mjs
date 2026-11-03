@@ -6,6 +6,7 @@
  */
 import { chromium } from "playwright";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { readFile, stat } from "node:fs/promises";
@@ -91,8 +92,9 @@ async function exportAsset(page, config, outputDir, metadata = {}) {
   await download.saveAs(dest);
   const info = await stat(dest);
   if (info.size === 0) throw new Error("Downloaded asset is empty");
-  const bytes = await readFile(dest);
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const digest = createHash("sha256");
+  for await (const chunk of createReadStream(dest)) digest.update(chunk);
+  const sha256 = digest.digest("hex");
   const receipt = {
     schemaVersion: 1, provider: "renderwolf-slots-studio-browser",
     source: page.url(), downloadedFile: filename,
