@@ -16,6 +16,7 @@ import {
   preparePrivateProfile, ensureNewExportDir,
   safeFilename, writeMetadata,
 } from "./core.mjs";
+import { loadRenderwolfStorageState } from "./session.mjs";
 
 function required(config, key) {
   const selector = config.selectors[key];
@@ -109,16 +110,35 @@ async function exportAsset(page, config, outputDir, metadata = {}) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const config = await loadConfig(opts.config);
-  const profile = await preparePrivateProfile(opts.profile || HOME_PROFILE);
   const needsOutput = opts.action === "export" || opts.action === "full";
   const outputDir = needsOutput ? path.resolve(opts.outputDir) : undefined;
   if (needsOutput) await ensureNewExportDir(outputDir);
 
-  const context = await chromium.launchPersistentContext(profile, {
-    headless: false, acceptDownloads: true,
-    viewport: { width: 1340, height: 850 },
-    // Do not disable browser security or anti-automation protections.
-  });
+  let browser;
+  let context;
+  if (opts.sessionFile) {
+    // Only the local RenderWolf cookies/storage are imported.
+    // Never print this state or send it to GitHub, logs, or third-party services.
+    const state = await loadRenderwolfStorageState(opts.sessionFile);
+    browser = await chromium.launch({ headless: false });
+    try {
+      context = await browser.newContext({
+        storageState: state, acceptDownloads: true,
+        viewport: { width: 1340, height: 850 },
+      });
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
+    console.log("Using local RenderWolf-only session file (secrets not shown).");
+  } else {
+    const profile = await preparePrivateProfile(opts.profile || HOME_PROFILE);
+    context = await chromium.launchPersistentContext(profile, {
+      headless: false, acceptDownloads: true,
+      viewport: { width: 1340, height: 850 },
+      // Do not disable browser security or anti-automation protections.
+    });
+  }
   try {
     const page = context.pages()[0] || await context.newPage();
     await page.goto(config.url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -135,6 +155,7 @@ async function main() {
     if (needsOutput) await exportAsset(page, config, outputDir, metadata);
   } finally {
     await context.close();
+    if (browser) await browser.close();
   }
 }
 
