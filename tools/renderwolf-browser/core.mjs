@@ -42,6 +42,7 @@ export function parseArgs(argv) {
     "--prompt-file": "promptFile",
     "--output-dir": "outputDir",
     "--profile": "profile",
+    "--session-file": "sessionFile",
   };
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
@@ -53,6 +54,9 @@ export function parseArgs(argv) {
     } else throw new TypeError("Unknown option: " + flag);
   }
   if (!opts.config) throw new TypeError("--config is required");
+  if (opts.sessionFile && opts.profile) {
+    throw new TypeError("Use --session-file or --profile, not both");
+  }
   if (["generate", "full"].includes(action) && (!opts.promptFile || !opts.approveGeneration)) {
     throw new TypeError("Generating requires --prompt-file and --approve-generation; it may consume credits");
   }
