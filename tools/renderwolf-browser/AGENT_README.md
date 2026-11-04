@@ -20,7 +20,7 @@ Replace the placeholder in the .env.local file with your own DeepSeek key, exact
 
 Save the file. Local .env.local is ignored by Git through the .env.* rule. **Never paste your real key into GitHub or a chat**, and never commit the file. The key is loaded locally by Node and used only in the DeepSeek API authorization header. Setting the DEEPSEEK_API_KEY environment variable is also supported.
 
-The model is the currently documented deepseek-flash (non-thinking tool calling), via the official API endpoint https://api.deepseek.com/chat/completions. DeepSeek API usage can cost money; the tool limits steps/tokens and reports usage.
+The model is the currently documented deepseek-flash (non-thinking tool calling), via the official API endpoint https://api.deepseek.com/chat/completions. DeepSeek API usage can cost money; the tool limits steps (not cumulative tokens) and reports token usage. The DeepSeek API remains billable per request.
 
 ## 2. First task: download EXISTING Yeti animation only
 
@@ -35,7 +35,8 @@ If successful, the new directory will contain the downloaded ZIP and an agent-re
 ## 3. Guardrails
 
 - One model-requested UI action per iteration; 12 steps default, hard cap 24.
-- Total DeepSeek token budget 12,000 default; hard cap 40,000. No automatic retries.
+- No cumulative DeepSeek token cutoff. Token use is tracked in the final report; the agent may still incur API costs. No automatic retries.
+- If the agent tries the same click on an unchanged interface for a third consecutive time, it stops and saves a local screenshot for diagnosis.
 - Up to five exports, up to 256 MiB each; never overwrites existing files.
 - Navigation restricted to RenderWolf HTTPS. No generic browser JS or shell access is exposed to DeepSeek.
 - Payment, billing, credit purchases, logout, publication and destructive actions are blocked.
@@ -80,6 +81,6 @@ GitHub Actions validates the pure agent logic and source syntax. It does not con
 - Output directory already exists: choose another directory name.
 - No visible browser controls: check that RenderWolf finished loading.
 - Generation blocked: this is intentional; first task downloads only the existing Yeti animation.
-- If the agent exhausts steps, check its local agent-report.json file for truthful status.
+- If the agent exhausts 12 steps or repeatedly clicks the same unchanged control, check the local agent-report.json and, when available, stalled-page.png. Each attempted action is also listed in actionTrace.
 
 **Account caution:** RenderWolf can restrict automated access in its terms; use at your own risk.
