@@ -105,17 +105,30 @@ export function validateAgentAction(raw, observation) {
  * open billing or click arbitrary buttons that could modify project state.
  * This allowlist is deliberately conservative: unknown controls are blocked.
  */
-export function canInspectAction(action, target) {
+export function canInspectAction(action, target, observation) {
   if (action?.action === "finish" || action?.action === "wait") return true;
   if (action?.action !== "click" || !target || target.disabled ||
       classifyControl(target) !== "safe") return false;
-  const label = [target.label, target.title, target.text].filter(Boolean).join(" ").toLowerCase();
+  const label = [target.label, target.title, target.text].filter(Boolean).join(" ").toLowerCase().trim();
   if (/download|export|save|upload|import|zip|submit|generate|regenerate|retry|purchase|clone|duplicate|start job|queue|run|render|approve|apply|confirm|delete|share/i.test(label)) {
     return false;
   }
+  // Explicit, non-purchasing dismissal of the observed Upgrade Required overlay.
+  // Only allow it when the current page actually displays that dialog.
+  const dialogContext = (observation?.context || []).join(" ").toLowerCase();
+  if (target.tag === "button" && /^(maybe later|not now|dismiss)$/.test(label) &&
+      /upgrade required/.test(dialogContext)) return true;
+
+  // RenderWolf dashboard uses <div role=button> project cards rather than <a>.
+  // Treat the observed "<N> assets <project name> Theme ..." layout as navigation,
+  // only on the dashboard; unknown clickable divs remain blocked.
+  const onDashboard = /\/dashboard\/?$/.test(observation?.url || "");
+  if (onDashboard && target.role === "button" && target.tag === "div" &&
+      /^\d+\s+assets?\s+.+\btheme\b/i.test(label)) return true;
+
   if (target.tag === "a") return true; // URL validated again by Playwright
   if (target.role === "tab") return true;
-  return /^(?:back|home|projects?|my games|games|dashboard|overview|assets?|design|characters?|symbols?|animations?|gallery|library|editor|open|view|details|continue|next|previous|close|menu|more|settings|navigation)$/i.test(label.trim());
+  return /^(?:back|home|projects?|my games|games|dashboard|overview|assets?|design|characters?|symbols?|animations?|gallery|library|editor|open|view|details|continue|next|previous|close|menu|more|settings|navigation)$/.test(label);
 }
 
 export function isRenderwolfPage(rawUrl) {
