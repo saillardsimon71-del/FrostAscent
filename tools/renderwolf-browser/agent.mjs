@@ -18,6 +18,7 @@ import { observeRenderwolfPage, TARGET_ATTR } from "./agent-observe.mjs";
 import { waitForRenderwolfUI, writeEmptyPageDiagnostics } from "./agent-ready.mjs";
 import { requestDeepSeekAction, SYSTEM_POLICY } from "./deepseek-client.mjs";
 import { safeFilename } from "./core.mjs";
+import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 
 async function confirmGeneration(control) {
   if (!stdin.isTTY) return false;
@@ -120,6 +121,9 @@ export async function runAgent(opts, deps = {}) {
   let completion = "Stopped before completing";
   let steps = 0;
   let status = "incomplete";
+  let previousClickFingerprint = null;
+  let sameClickCount = 0;
+  const actionTrace = [];
   try {
     const context = await browser.newContext({
       storageState: state, acceptDownloads: true,
@@ -157,11 +161,32 @@ export async function runAgent(opts, deps = {}) {
       const result = await requestAction({
         apiKey, messages, model: opts.model,
       });
+      // Report token usage for cost visibility, but do NOT stop at an arbitrary
+      // aggregate token budget. Work is bounded by maxSteps and action safety.
       totalTokens += result.usage?.total_tokens || 0;
-      if (totalTokens > opts.tokenBudget) {
-        completion = "Local DeepSeek token budget reached";
+      const clickFingerprint = actionFingerprint(observation, result.action);
+      const proposedCount = countSameClick(
+        previousClickFingerprint, sameClickCount, clickFingerprint
+      );
+      const target = observation.controls.find(c => c.id === result.action?.target_id);
+      const label = [target?.label, target?.title, target?.text]
+        .filter(Boolean).join(" ").slice(0, 90);
+      if (clickFingerprint && proposedCount > MAX_SAME_CLICK) {
+        completion = "Stopped before repeating the same click on unchanged UI a third time";
+        console.log(completion + (label ? ": " + label : ""));
+        try {
+          await page.screenshot({
+            path: path.join(opts.outputDir, "stalled-page.png"),
+            fullPage: false, timeout: 12000,
+          });
+        } catch { /* Optional local-only diagnostic screenshot. */ }
         break;
       }
+      previousClickFingerprint = clickFingerprint;
+      sameClickCount = proposedCount;
+      console.log("Proposed action: " + String(result.action?.action || "unknown") +
+        (label ? " [" + label + "]" : ""));
+      actionTrace.push({ step: steps, action: String(result.action?.action || "unknown"), target: label });
       let toolOutput;
       try {
         toolOutput = await performAction(page, opts, observation, result.action, files);
@@ -202,6 +227,7 @@ export async function runAgent(opts, deps = {}) {
       steps,
       deepseekTokens: totalTokens,
       downloads: files,
+      actionTrace,
       note: "No RenderWolf generation/export success is claimed unless a file is listed.",
     };
     await writeFile(path.join(outDir, "agent-report.json"), JSON.stringify(report, null, 2) + "\n",
