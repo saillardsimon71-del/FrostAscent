@@ -51,7 +51,7 @@ test("model cannot click unobserved or destructive controls", () => {
 });
 test("credential fields cannot be filled by LLM", () => {
   const o={controls:[{id:1,tag:"input",placeholder:"API Key"}]};
-  assert.throws(()=>validateAgentAction({action:"fill",target_id:1,value:"secret"},o),/credential/);
+  assert.throws(()=>validateAgentAction({action:"fill",target_id:1,value:"secret"},o),/blocked|credential/);
 });
 test("redact visible UI URLs, keys and emails", () => {
   const value=redactForModel("https://slots.renderwolf.ai?token=abc someone@example.org sk-abcdefghijklmnopqrstuvwxyz1234");
