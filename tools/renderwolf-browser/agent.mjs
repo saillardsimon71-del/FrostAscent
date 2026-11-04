@@ -10,6 +10,7 @@ import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseAgentArgs, validateAgentAction, readLocalDeepSeekKey,
   publicPageUrl } from "./agent-core.mjs";
 import { loadRenderwolfStorageState } from "./session.mjs";
@@ -204,7 +205,7 @@ async function main() {
   await runAgent(opts);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"))) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     console.error("RenderWolf AI agent stopped: " + String(error.message).slice(0, 200));
     process.exitCode = 1;
