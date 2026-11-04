@@ -15,6 +15,7 @@ import { parseAgentArgs, validateAgentAction, readLocalDeepSeekKey,
   publicPageUrl } from "./agent-core.mjs";
 import { loadRenderwolfStorageState } from "./session.mjs";
 import { observeRenderwolfPage, TARGET_ATTR } from "./agent-observe.mjs";
+import { waitForRenderwolfUI, writeEmptyPageDiagnostics } from "./agent-ready.mjs";
 import { requestDeepSeekAction, SYSTEM_POLICY } from "./deepseek-client.mjs";
 import { safeFilename } from "./core.mjs";
 
@@ -127,14 +128,24 @@ export async function runAgent(opts, deps = {}) {
     const page = await context.newPage();
     await page.goto(opts.startUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
     publicPageUrl(page.url());
+    console.log("Waiting for RenderWolf interface hydration (no DeepSeek call yet)...");
     const history = [];
     for (let i = 0; i < opts.maxSteps; i++) {
       steps++;
-      const observation = await observeRenderwolfPage(page);
+      const pending = await waitForRenderwolfUI(page, observeRenderwolfPage, {
+        requireAnimationDownload: i === 0 && opts.startUrl.endsWith("/extra/animation"),
+      });
+      const observation = pending.observation;
+      if (pending.polls > 1) console.log("UI readiness polling: " + pending.polls + " checks");
+      if (!pending.ready) {
+        const diagnostic = await writeEmptyPageDiagnostics(page, opts.outputDir);
+        console.log("RenderWolf interface not ready. Diagnostic screenshot: " + diagnostic.screenshotPath);
+        completion = "RenderWolf UI not ready; screenshot and diagnostic JSON saved locally";
+        break;
+      }
       console.log("Step " + steps + "/" + opts.maxSteps +
         " - " + observation.url +
         " (" + observation.controls.length + " visible controls)");
-      if (!observation.controls.length) throw new Error("No visible browser controls found");
       const messages = [
         { role: "system", content: SYSTEM_POLICY },
         { role: "user", content: "Task from the authenticated user: " + opts.task +
