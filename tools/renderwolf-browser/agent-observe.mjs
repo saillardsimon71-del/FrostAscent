@@ -63,7 +63,20 @@ export async function observeRenderwolfPage(page) {
         placeholder:safeText(el.getAttribute("placeholder")),
         text:safeText(text),
         type:el.getAttribute("type") || undefined,
-        checked:el.matches("input[type=radio],input[type=checkbox]") ? el.checked : undefined,
+        checked:el.matches("input[type=radio],input[type=checkbox]") ? el.checked :
+          el.querySelector("input[type=radio],input[type=checkbox]")?.checked,
+        selected:(()=>{
+          const attr=el.getAttribute("aria-checked") ??
+            el.getAttribute("aria-selected") ?? el.getAttribute("aria-pressed");
+          if(attr==="true")return true;
+          if(attr==="false")return false;
+          const state=el.getAttribute("data-state");
+          if(state==="checked"||state==="active"||state==="selected")return true;
+          if(state==="unchecked"||state==="inactive"||state==="unselected")return false;
+          if(el.matches("input[type=radio],input[type=checkbox]"))return el.checked;
+          const nested=el.querySelector("input[type=radio],input[type=checkbox]");
+          return nested ? nested.checked : undefined;
+        })(),
         disabled:!!el.disabled || el.getAttribute("aria-disabled")==="true",
         editable:el.getAttribute("contenteditable")==="true",
         x:Math.round(r.x),y:Math.round(r.y),
