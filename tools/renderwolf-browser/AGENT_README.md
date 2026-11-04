@@ -145,3 +145,23 @@ node --check agent.mjs
 ```
 
 GitHub CI uses mock responses; it cannot verify live RenderWolf discovery without your local authenticated session.
+
+## V2 dashboard inspection fix — November 4, 2026
+
+A real `--mode inspect` trial found the dashboard after an `Upgrade Required` overlay.
+DeepSeek correctly selected `Maybe Later` and the `34 assets Frost Ascent Theme …` project card,
+but the previous conservative navigation allowlist rejected both, consuming five DeepSeek calls.
+
+The inspector now allows **only** the observed non-purchasing `Maybe Later` dismissal
+when the overlay context actually says `Upgrade Required`, and `<N> assets … Theme …`
+dashboard project cards implemented as `<div role="button">`. Unknown project controls,
+billing, Subscribe Now and Add credits remain blocked. An inspection action rejected by a
+guard now stops immediately rather than spending more model calls on the same page.
+
+The observed `Upgrade Required` / `Subscribe to unlock full access` copy
+may indicate a genuine **account-tier restriction on creation**; dismissal is not a
+subscription bypass. Check actual available creation features manually before paying
+or authorizing a generation. This update has no live authenticated CI test.
+
+After updating the branch, rerun the `--mode inspect` command above
+with a **new output directory**, e.g. `renderwolf-inspect-v2-02`.
