@@ -84,3 +84,19 @@ GitHub Actions validates the pure agent logic and source syntax. It does not con
 - If the agent exhausts 12 steps or repeatedly clicks the same unchanged control, check the local agent-report.json and, when available, stalled-page.png. Each attempted action is also listed in actionTrace.
 
 **Account caution:** RenderWolf can restrict automated access in its terms; use at your own risk.
+
+
+## Export clicked but agent reported incomplete (November 2026 fix)
+
+Earlier versions waited only 2.5 seconds for a download event on the original tab. RenderWolf can spend longer preparing an animation spritesheet, or trigger a download in another tab. This could show an export in Chromium while the agent recorded no saved file, reopened the export menu, and hit the repeated-click guard.
+
+The current browser agent now:
+- listens for downloads from **every page in the Chromium context**, including popups;
+- waits up to 60 seconds after the final "Download" button before concluding;
+- **saves and verifies** the actual downloaded bytes with SHA-256 and stops without another DeepSeek call;
+- never counts a mere click as proof of export;
+- if no verified download appears after the final click, writes a local screenshot named download-not-observed.png and records an incomplete report, **without re-clicking**.
+
+Before repeating a run, check your normal Downloads folder for a previously saved ZIP; you may not need to generate/export twice. The file must exist in the agent output folder and be listed in the report's downloads array to count as verified.
+
+Use a new destination folder, such as renderwolf-yeti-agent-04, when you retry. The latest browser agent never overwrites an earlier export.
