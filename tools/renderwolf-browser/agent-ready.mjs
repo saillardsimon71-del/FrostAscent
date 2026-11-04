@@ -66,6 +66,7 @@ export async function waitForRenderwolfUI(page, observe, {
   intervalMs = DEFAULT_READINESS_INTERVAL_MS,
   requireAnimationDownload = false,
   requireGameWorkspace = false,
+  requireDesignWorkspace = false,
 } = {}) {
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > 60) {
     throw new TypeError("Invalid readiness attempt count");
