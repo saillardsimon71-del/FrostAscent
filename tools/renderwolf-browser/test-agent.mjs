@@ -4,6 +4,7 @@ import { parseAgentArgs, validateAgentAction, classifyControl,
   publicPageUrl, readLocalDeepSeekKey, redactForModel } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
 import { waitForRenderwolfUI, isUsefulObservation } from "./agent-ready.mjs";
+import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 
 const start = "https://slots.renderwolf.ai/games/1785165208846/design/character_symbol_set_1785165292435_symbol_1/extra/animation";
 const basic = ["--task", "Télécharge l'animation existante du Yéti",
@@ -18,10 +19,11 @@ test("agent requires existing session, explicit task, fresh output folder", () =
   assert.equal(parsed.allowGeneration, undefined);
   assert.throws(() => parseAgentArgs(["--task", "Do download"]), /session-file/);
 });
-test("agent command caps requests, tokens and host", () => {
+test("agent caps action count and stays on provider host without token budget", () => {
   assert.equal(parseAgentArgs([...basic, "--max-steps", "4"]).maxSteps,4);
   assert.throws(() => parseAgentArgs([...basic, "--max-steps", "100"]), /maxSteps/);
-  assert.throws(() => parseAgentArgs([...basic, "--token-budget", "999999"]), /tokenBudget/);
+  assert.equal(parseAgentArgs(basic).tokenBudget, undefined);
+  assert.throws(() => parseAgentArgs([...basic, "--token-budget", "999999"]), /Unsupported/);
   assert.throws(() => parseAgentArgs([...basic, "--start-url", "https://evil.test/"]), /start-url/);
   assert.throws(() => parseAgentArgs([...basic, "--start-url", start+"?token=x"]), /start-url/);
   assert.equal(parseAgentArgs([...basic, "--allow-generation"]).allowGeneration, true);
@@ -149,4 +151,37 @@ test("no control after readiness attempts returns diagnostic-worthy failure",asy
   assert.equal(calls,4);
   assert.equal(result.ready,false);
   assert.equal(result.polls,4);
+});
+
+
+test("repeated click on unchanged page stops before third click", () => {
+  const observation = {
+    url: "https://slots.renderwolf.ai/games/example/extra/animation",
+    controls: [
+      {id:0,tag:"button",label:"Download animation"},
+      {id:1,tag:"button",label:"Generate"},
+    ],
+  };
+  const click = {action:"click",target_id:0};
+  const fp = actionFingerprint(observation, click);
+  assert.ok(fp);
+  const first = countSameClick(null,0,fp);
+  const second = countSameClick(fp,first,fp);
+  const third = countSameClick(fp,second,fp);
+  assert.equal(first,1);
+  assert.equal(second,2);
+  assert.ok(third > MAX_SAME_CLICK);
+});
+test("change of UI or action clears stalled-click count", () => {
+  const base = {url:"https://slots.renderwolf.ai/x",controls:[{id:0,tag:"button",label:"Download animation"}]};
+  const changed = {url:"https://slots.renderwolf.ai/x",controls:[
+    {id:0,tag:"button",label:"Download animation"},
+    {id:1,tag:"label",text:"Both sheets (.zip)"},
+  ]};
+  const previous = actionFingerprint(base,{action:"click",target_id:0});
+  const current = actionFingerprint(changed,{action:"click",target_id:0});
+  assert.notEqual(previous,current);
+  assert.equal(countSameClick(previous,2,current),1);
+  assert.equal(actionFingerprint(changed,{action:"wait"}),null);
+  assert.equal(countSameClick(current,2,null),0);
 });
