@@ -34,6 +34,7 @@ jobs:
         run: |
           node --check tools/renderwolf-browser/cli.mjs
           node --check tools/renderwolf-browser/agent.mjs
+          node --check tools/renderwolf-browser/agent-stall.mjs
           node --check tools/renderwolf-browser/agent-ready.mjs
           node --check tools/renderwolf-browser/agent-core.mjs
           node --check tools/renderwolf-browser/agent-observe.mjs
