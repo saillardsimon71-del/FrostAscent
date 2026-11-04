@@ -352,3 +352,33 @@ test("DeepSeek retains usage uncertainty and never retries HTTP failures", async
   assert.equal(result.unknownUsageRequests,1);
   assert.equal(result.usage.total_tokens,0);
 });
+
+
+test("RenderWolf dashboard project card is safe to open in inspect mode", () => {
+  const dashboard = { url: "https://slots.renderwolf.ai/dashboard",
+    context: ["Frost Ascent", "Demo Game"], controls: [] };
+  const project = {
+    tag:"div", role:"button",
+    text:"34 assets Frost Ascent Theme Icy mountain ascent at night from base camp",
+  };
+  const click = { action:"click", target_id:7 };
+  assert.equal(canInspectAction(click, project, dashboard), true);
+  assert.equal(canInspectAction(click, project, {...dashboard,url:"https://slots.renderwolf.ai/other"}),false);
+  assert.equal(canInspectAction(click, {...project,tag:"button"}, dashboard),false);
+  assert.equal(canInspectAction(click, {...project,text:"34 assets Delete all games"},dashboard),false);
+  assert.equal(canInspectAction(click, {...project,text:"34 assets Frost Ascent"},dashboard),false);
+  assert.equal(canInspectAction(click, {...project,disabled:true},dashboard),false);
+});
+
+test("Upgrade Required dialog can be dismissed without payment or project mutation", () => {
+  const modal = {url:"https://slots.renderwolf.ai/dashboard",
+    context:["Upgrade Required", "Subscribe to unlock full access"], controls:[]};
+  const dismiss = { tag:"button", label:"Maybe Later" };
+  const action = {action:"click",target_id:1};
+  assert.equal(canInspectAction(action,dismiss,modal),true);
+  assert.equal(canInspectAction(action,dismiss,{...modal,context:["Frost Ascent"]}),false);
+  assert.equal(canInspectAction(action,{tag:"button",label:"Subscribe Now"},modal),false);
+  assert.equal(canInspectAction(action,{tag:"button",label:"Add credits"},modal),false);
+  assert.equal(canInspectAction(action,{tag:"button",label:"Generate"},modal),false);
+  assert.equal(canInspectAction({action:"fill",target_id:1},dismiss,modal),false);
+});
