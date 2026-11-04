@@ -17,6 +17,7 @@ import {
   safeFilename, writeMetadata,
 } from "./core.mjs";
 import { loadRenderwolfStorageState } from "./session.mjs";
+import { inspectVisibleInterface } from "./inspector.mjs";
 
 function displayPageUrl(page) {
   const url = new URL(page.url());
@@ -36,16 +37,10 @@ async function snapshot(page, outputDir, name) {
 }
 
 async function inspect(page) {
-  const rows = await page.locator("input,textarea,button,[role=button],[contenteditable=true]")
-    .evaluateAll((nodes) => nodes.slice(0, 120).map((n) => ({
-      tag: n.tagName.toLowerCase(),
-      type: n.getAttribute("type"),
-      label: n.getAttribute("aria-label"),
-      placeholder: n.getAttribute("placeholder"),
-      text: (n.innerText || n.textContent || "").trim().slice(0, 100),
-    })));
-  // Never print form values, browser cookies or session tokens.
-  console.log(JSON.stringify({ url: displayPageUrl(page), controls: rows }, null, 2));
+  // Restrict diagnostics to visible controls, prioritizing the Animation panel
+  // instead of slicing the first 120 buttons in the whole React tree.
+  const state = await inspectVisibleInterface(page);
+  console.log(JSON.stringify({ url: displayPageUrl(page), ...state }, null, 2));
 }
 
 async function pause(message) {
@@ -146,7 +141,7 @@ async function main() {
   }
   try {
     const page = context.pages()[0] || await context.newPage();
-    await page.goto(config.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(opts.startUrl || config.url, { waitUntil: "domcontentloaded", timeout: 45000 });
     if (opts.action === "inspect") {
       console.log("Log in manually if needed, and navigate to Slots Studio.");
       await pause("Inspect your account interface in the Chromium window.");
