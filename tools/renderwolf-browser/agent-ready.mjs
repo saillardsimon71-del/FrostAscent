@@ -29,9 +29,24 @@ export function hasGameWorkspaceControls(observation) {
   });
 }
 
+/**
+ * A direct /design URL can first render only global navigation. Do not spend a
+ * DeepSeek call until the design asset browser or Add Element entry is visible.
+ */
+export function hasDesignWorkspaceControls(observation) {
+  if (!/\/games\/[^/]+\/design(?:\/|$)/.test(observation?.url || "")) return false;
+  return (observation.controls || []).some(control => {
+    const label=[control.label, control.title, control.text].filter(Boolean).join(" ").trim();
+    return (control.tag === "a" &&
+      (/^add element$/i.test(label) ||
+       /^(?:background\s*[-–]|the yeti guardian$|the climber$|reel frame\s*[-–]|game title$|spin button$)/i.test(label)));
+  });
+}
+
 export function isUsefulObservation(observation, {
   requireAnimationDownload = false,
   requireGameWorkspace = false,
+  requireDesignWorkspace = false,
 } = {}) {
   if (!observation || !Array.isArray(observation.controls) ||
       observation.controls.length === 0) return false;
@@ -42,6 +57,7 @@ export function isUsefulObservation(observation, {
       ));
   }
   if (requireGameWorkspace) return hasGameWorkspaceControls(observation);
+  if (requireDesignWorkspace) return hasDesignWorkspaceControls(observation);
   return true;
 }
 
@@ -57,7 +73,7 @@ export async function waitForRenderwolfUI(page, observe, {
   let observation;
   for (let i = 0; i < attempts; i++) {
     observation = await observe(page);
-    if (isUsefulObservation(observation, { requireAnimationDownload, requireGameWorkspace })) {
+    if (isUsefulObservation(observation, { requireAnimationDownload, requireGameWorkspace, requireDesignWorkspace })) {
       return { ready: true, observation, polls: i + 1 };
     }
     if (i < attempts - 1) await page.waitForTimeout(intervalMs);
