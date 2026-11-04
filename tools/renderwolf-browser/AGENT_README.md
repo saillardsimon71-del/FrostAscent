@@ -114,3 +114,34 @@ The current version includes two changes:
 This is a targeted UI recovery, **not a guarantee of the export format**. Inspect the actual saved ZIP to confirm it contains the requested transparent and opaque sheets before integration into Frost Ascent. The existing no-repeat and no-credit safeguards remain in place.
 
 Re-run using a **new** output directory, for example renderwolf-yeti-agent-05. Check agent-report.json for status="exported" and at least one entry in downloads. CI does not execute an authenticated RenderWolf browser session.
+
+
+## V2: safe project-wide inspection before creative production
+
+The prior example started on a deep Yeti animation editor URL. That was a **navigation instruction**, not an autonomous decision by DeepSeek. To explore a project, start from the RenderWolf dashboard, with explicit inspection mode:
+
+```powershell
+cd "$HOME\renderwolf-bridge\tools\renderwolf-browser"
+node agent.mjs `
+  --mode inspect `
+  --task "Depuis le tableau de bord, ouvre Frost Ascent. Explore les sections de création de personnages, variantes, références et animations. Identifie uniquement les commandes effectivement visibles. Ne crée, ne régénère, ne modifie et ne télécharge rien." `
+  --session-file "$HOME\Downloads\renderwolf-session.json" `
+  --start-url "https://slots.renderwolf.ai/" `
+  --output-dir "$HOME\Downloads\renderwolf-inspect-v2-01" `
+  --max-steps 12
+```
+
+Use a **new output directory** for each attempt. Inspect mode allows only RenderWolf navigation links, tabs and a small allowlist of navigation buttons; it blocks text fills, exports, generation and unknown buttons. It never enables paid actions. `agent-report.json` includes `observedScreens` documenting the actual visible UI, `deepseekRequests` including format-recovery calls, and `deepseekRequestsWithoutReportedUsage`. This is **DOM-only inspection**, not visual inspection of images, artistic QA, or proof that RenderWolf can produce any particular format.
+
+Malformed/missing/unsupported DeepSeek tool calls are retried at most **twice** with a bounded repair instruction. These are additional potentially billable DeepSeek API calls. HTTP/network errors are **not retried**; malformed-response retries never repeat a browser action. Usage is summed across responses that provide usage metadata; missing usage is explicitly counted and should not be interpreted as zero cost.
+
+`--mode export` is the **default** and preserves the previous download-only command behavior. `--mode produce --allow-generation` is available for a separately authorized production trial, with a maximum of one generation/modification click and an interactive `AUTORISER` confirmation. This mode is **not** unattended multi-variant generation: the agent still cannot assess image fidelity from screenshots, and it cannot claim a successful generation solely from clicking a button. First inspect RenderWolf's real controls and any credit implications, then authorize a bounded test deliberately.
+
+To verify offline:
+
+```powershell
+node --test test-agent.mjs test-agent-download.mjs
+node --check agent.mjs
+```
+
+GitHub CI uses mock responses; it cannot verify live RenderWolf discovery without your local authenticated session.
