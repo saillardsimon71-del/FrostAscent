@@ -35,6 +35,12 @@ export function hasGameWorkspaceControls(observation) {
  */
 export function hasDesignWorkspaceControls(observation) {
   if (!/\/games\/[^/]+\/design(?:\/|$)/.test(observation?.url || "")) return false;
+  // Direct deep links may display the same dismissible, non-billing upsell.
+  if ((observation?.context || []).some(x => /upgrade required/i.test(x)) &&
+      (observation?.controls || []).some(c =>
+        /^maybe later$/i.test([c.label, c.text].filter(Boolean).join(" ").trim()))) {
+    return true;
+  }
   return (observation.controls || []).some(control => {
     const label=[control.label, control.title, control.text].filter(Boolean).join(" ").trim();
     return (control.tag === "a" &&
