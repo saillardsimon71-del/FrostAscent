@@ -49,13 +49,37 @@ export function hasDesignWorkspaceControls(observation) {
   });
 }
 
+/**
+ * An Add Element click usually leaves the asset gallery for a creation
+ * wizard. Do not require gallery-specific selectors on the following step.
+ * Instead wait until a genuine NEW control or heading appears. Comparing
+ * to the prior DOM avoids mistaking a persistent sidebar for the wizard.
+ */
+export function hasFreshInterface(observation, previous) {
+  if (!observation || !previous || !Array.isArray(observation.controls) ||
+      observation.controls.length === 0) return false;
+  const signature = c => [c.tag, c.role || "", c.label || "", c.text || "",
+    c.title || "", c.placeholder || ""].join("|");
+  const before = new Set((previous.controls || []).map(signature));
+  const added = observation.controls.filter(c => !before.has(signature(c)));
+  // A new control on the creation page is enough; even a disabled Generate
+  // button is useful evidence in read-only inspection (not permission to act).
+  if (added.length) return true;
+  const beforeHeadings = new Set(previous.context || []);
+  return (observation.context || []).some(heading =>
+    heading && !beforeHeadings.has(heading) &&
+    !/^(?:frost ascent|chat with lucky|loading(?:\.\.\.)?)$/i.test(heading));
+}
+
 export function isUsefulObservation(observation, {
   requireAnimationDownload = false,
   requireGameWorkspace = false,
   requireDesignWorkspace = false,
+  requireFreshFrom = null,
 } = {}) {
   if (!observation || !Array.isArray(observation.controls) ||
       observation.controls.length === 0) return false;
+  if (requireFreshFrom) return hasFreshInterface(observation, requireFreshFrom);
   if (requireAnimationDownload) {
     return observation.controls.some((control) =>
       /download animation/i.test(
@@ -73,6 +97,7 @@ export async function waitForRenderwolfUI(page, observe, {
   requireAnimationDownload = false,
   requireGameWorkspace = false,
   requireDesignWorkspace = false,
+  requireFreshFrom = null,
 } = {}) {
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > 60) {
     throw new TypeError("Invalid readiness attempt count");
@@ -80,7 +105,7 @@ export async function waitForRenderwolfUI(page, observe, {
   let observation;
   for (let i = 0; i < attempts; i++) {
     observation = await observe(page);
-    if (isUsefulObservation(observation, { requireAnimationDownload, requireGameWorkspace, requireDesignWorkspace })) {
+    if (isUsefulObservation(observation, { requireAnimationDownload, requireGameWorkspace, requireDesignWorkspace, requireFreshFrom })) {
       return { ready: true, observation, polls: i + 1 };
     }
     if (i < attempts - 1) await page.waitForTimeout(intervalMs);
