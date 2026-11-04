@@ -100,3 +100,17 @@ The current browser agent now:
 Before repeating a run, check your normal Downloads folder for a previously saved ZIP; you may not need to generate/export twice. The file must exist in the agent output folder and be listed in the report's downloads array to count as verified.
 
 Use a new destination folder, such as renderwolf-yeti-agent-04, when you retry. The latest browser agent never overwrites an earlier export.
+
+
+## Yeti 4×4 repeated-selection correction
+
+Observed on the real account: the agent opened Download animation → Download sprite sheet…, selected 4×4, then kept selecting 4×4 without clicking the final Download button. No file was recorded; the repeated-click stop correctly prevented further looping.
+
+The current version includes two changes:
+
+- The UI observation now exposes selected/checked state from native controls, ARIA properties and recognized data-state attributes.
+- On the **animation editor only**, when the AI proposes a repeated grid-size selection (such as 4×4) while there is exactly one visible, enabled final Download button, the local guard advances to that Download action instead. If the user explicitly requested Both sheets and one visible Both sheets option is known to be unselected, it selects that option first. Ambiguous or disabled buttons are never guessed.
+
+This is a targeted UI recovery, **not a guarantee of the export format**. Inspect the actual saved ZIP to confirm it contains the requested transparent and opaque sheets before integration into Frost Ascent. The existing no-repeat and no-credit safeguards remain in place.
+
+Re-run using a **new** output directory, for example renderwolf-yeti-agent-05. Check agent-report.json for status="exported" and at least one entry in downloads. CI does not execute an authenticated RenderWolf browser session.
