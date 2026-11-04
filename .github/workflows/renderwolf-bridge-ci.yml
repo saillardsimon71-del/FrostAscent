@@ -28,12 +28,13 @@ jobs:
         with:
           node-version: '22'
       - name: JavaScript manifest and browser core tests
-        run: node --test tests/test_renderwolf_manifest.mjs tools/renderwolf-browser/test-core.mjs tools/renderwolf-browser/test-agent.mjs
+        run: node --test tests/test_renderwolf_manifest.mjs tools/renderwolf-browser/test-core.mjs tools/renderwolf-browser/test-agent.mjs tools/renderwolf-browser/test-agent-download.mjs
 
       - name: Chromium adapter and Chrome extension syntax checks
         run: |
           node --check tools/renderwolf-browser/cli.mjs
           node --check tools/renderwolf-browser/agent.mjs
+          node --check tools/renderwolf-browser/agent-download.mjs
           node --check tools/renderwolf-browser/agent-stall.mjs
           node --check tools/renderwolf-browser/agent-ready.mjs
           node --check tools/renderwolf-browser/agent-core.mjs
