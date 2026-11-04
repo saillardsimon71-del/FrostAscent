@@ -4,18 +4,16 @@ import path from "node:path";
 export const DEFAULT_MODEL = "deepseek-flash";
 export const DEFAULT_MAX_STEPS = 12;
 export const MAX_STEPS = 24;
-export const DEFAULT_TOKEN_BUDGET = 12000;
-export const MAX_TOKEN_BUDGET = 40000;
 
 export function parseAgentArgs(args) {
   const opts = {
-    maxSteps: DEFAULT_MAX_STEPS, tokenBudget: DEFAULT_TOKEN_BUDGET,
+    maxSteps: DEFAULT_MAX_STEPS,
     model: DEFAULT_MODEL,
   };
   const options = {
     "--task": "task", "--session-file": "sessionFile",
     "--start-url": "startUrl", "--output-dir": "outputDir",
-    "--max-steps": "maxSteps", "--token-budget": "tokenBudget",
+    "--max-steps": "maxSteps",
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -39,14 +37,11 @@ export function parseAgentArgs(args) {
     throw new TypeError("--start-url must be a RenderWolf HTTPS page with no query or fragment");
   }
   opts.startUrl = url.href;
-  for (const [key, max] of [["maxSteps", MAX_STEPS], ["tokenBudget", MAX_TOKEN_BUDGET]]) {
-    const raw = opts[key];
-    const n = Number(raw);
-    if (!Number.isSafeInteger(n) || n < 1 || n > max) {
-      throw new TypeError(key + " must be an integer from 1 to " + max);
-    }
-    opts[key] = n;
+  const n = Number(opts.maxSteps);
+  if (!Number.isSafeInteger(n) || n < 1 || n > MAX_STEPS) {
+    throw new TypeError("maxSteps must be an integer from 1 to " + MAX_STEPS);
   }
+  opts.maxSteps = n;
   return opts;
 }
 
