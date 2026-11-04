@@ -9,11 +9,12 @@ export function parseAgentArgs(args) {
   const opts = {
     maxSteps: DEFAULT_MAX_STEPS,
     model: DEFAULT_MODEL,
+    mode: "export", // preserve the proven export-only default
   };
   const options = {
     "--task": "task", "--session-file": "sessionFile",
     "--start-url": "startUrl", "--output-dir": "outputDir",
-    "--max-steps": "maxSteps",
+    "--max-steps": "maxSteps", "--mode": "mode",
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -42,6 +43,15 @@ export function parseAgentArgs(args) {
     throw new TypeError("maxSteps must be an integer from 1 to " + MAX_STEPS);
   }
   opts.maxSteps = n;
+  if (!["inspect", "export", "produce"].includes(opts.mode)) {
+    throw new TypeError("mode must be inspect, export, or produce");
+  }
+  if (opts.mode === "inspect" && opts.allowGeneration) {
+    throw new TypeError("--allow-generation is incompatible with inspection");
+  }
+  if (opts.mode === "produce" && !opts.allowGeneration) {
+    throw new TypeError("Production requires --allow-generation and per-click approval");
+  }
   return opts;
 }
 
@@ -88,6 +98,24 @@ export function validateAgentAction(raw, observation) {
     return { action: "fill", target_id: index, value: raw.value, risk };
   }
   return { action: "click", target_id: index, risk };
+}
+
+/**
+ * Inspection is navigation-only. Never fill fields, export, trigger generation,
+ * open billing or click arbitrary buttons that could modify project state.
+ * This allowlist is deliberately conservative: unknown controls are blocked.
+ */
+export function canInspectAction(action, target) {
+  if (action?.action === "finish" || action?.action === "wait") return true;
+  if (action?.action !== "click" || !target || target.disabled ||
+      classifyControl(target) !== "safe") return false;
+  const label = [target.label, target.title, target.text].filter(Boolean).join(" ").toLowerCase();
+  if (/download|export|save|upload|import|zip|submit|generate|regenerate|retry|purchase|clone|duplicate|start job|queue|run|render|approve|apply|confirm|delete|share/i.test(label)) {
+    return false;
+  }
+  if (target.tag === "a") return true; // URL validated again by Playwright
+  if (target.role === "tab") return true;
+  return /^(?:back|home|projects?|my games|games|dashboard|overview|assets?|design|characters?|symbols?|animations?|gallery|library|editor|open|view|details|continue|next|previous|close|menu|more|settings|navigation)$/i.test(label.trim());
 }
 
 export function isRenderwolfPage(rawUrl) {
