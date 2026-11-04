@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseAgentArgs, validateAgentAction, classifyControl,
   publicPageUrl, readLocalDeepSeekKey, redactForModel, canInspectAction } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
-import { waitForRenderwolfUI, isUsefulObservation } from "./agent-ready.mjs";
+import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls } from "./agent-ready.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 import { recoverRepeatedSheetChoice } from "./agent-export-recovery.mjs";
 
@@ -381,4 +381,50 @@ test("Upgrade Required dialog can be dismissed without payment or project mutati
   assert.equal(canInspectAction(action,{tag:"button",label:"Add credits"},modal),false);
   assert.equal(canInspectAction(action,{tag:"button",label:"Generate"},modal),false);
   assert.equal(canInspectAction({action:"fill",target_id:1},dismiss,modal),false);
+});
+
+
+test("game /player route must hydrate beyond stale dashboard cards before DeepSeek",async()=>{
+  const dashboardShell={
+    url:"https://slots.renderwolf.ai/games/1785165208846/player",
+    controls:[
+      {tag:"div",role:"button",text:"34 assets Frost Ascent Theme Icy mountain ascent at night"},
+      {tag:"button",text:"Move to folder"},
+      {tag:"button",text:"Delete Game"},
+      {tag:"button",text:"Add credits"},
+    ],
+    context:["Frost Ascent","Demo Game","Games Showcase"],
+  };
+  const ready={...dashboardShell,controls:[
+    ...dashboardShell.controls,{tag:"button",text:"Design"},
+    {tag:"button",text:"Symbols"},
+  ]};
+  assert.equal(hasGameWorkspaceControls(dashboardShell),false);
+  assert.equal(isUsefulObservation(dashboardShell,{requireGameWorkspace:true}),false);
+  assert.equal(hasGameWorkspaceControls(ready),true);
+  let poll=0, sleeps=0;
+  const page={waitForTimeout:async()=>sleeps++};
+  const output=await waitForRenderwolfUI(page,async()=>++poll<4?dashboardShell:ready,{
+    attempts:5,intervalMs:0,requireGameWorkspace:true,
+  });
+  assert.equal(output.ready,true);
+  assert.equal(output.polls,4);
+  assert.equal(sleeps,3);
+  assert.equal(output.observation.controls.at(-1).text,"Symbols");
+});
+
+test("game /player stale dashboard shell times out rather than sending model actions",async()=>{
+  const old={
+    url:"https://slots.renderwolf.ai/games/1785165208846/player",
+    controls:[{tag:"div",role:"button",text:"34 assets Frost Ascent Theme Demo"}],
+    context:["Frost Ascent","Demo Game"],
+  };
+  let count=0;
+  const result=await waitForRenderwolfUI({waitForTimeout:async()=>{}},async()=>{
+    count++; return old;
+  },{attempts:3,intervalMs:0,requireGameWorkspace:true});
+  assert.equal(result.ready,false);
+  assert.equal(count,3);
+  // Previous export and generic readiness behavior are not affected.
+  assert.equal(isUsefulObservation(old),true);
 });
