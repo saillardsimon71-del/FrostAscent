@@ -166,11 +166,15 @@ export async function runAgent(opts, deps = {}) {
     const history = [];
     for (let i = 0; i < opts.maxSteps; i++) {
       steps++;
+      const currentPath = new URL(page.url()).pathname;
       const onGamePlayer = opts.mode === "inspect" &&
-        /\/games\/[^/]+\/player(?:\/|$)/.test(new URL(page.url()).pathname);
+        /\/games\/[^/]+\/player(?:\/|$)/.test(currentPath);
+      const onDesignPage = opts.mode === "inspect" &&
+        /\/games\/[^/]+\/design(?:\/|$)/.test(currentPath);
       const pending = await waitForRenderwolfUI(page, observeRenderwolfPage, {
         requireAnimationDownload: i === 0 && opts.startUrl.endsWith("/extra/animation"),
         requireGameWorkspace: onGamePlayer,
+        requireDesignWorkspace: onDesignPage,
       });
       const observation = pending.observation;
       if (pending.polls > 1) console.log("UI readiness polling: " + pending.polls + " checks");
@@ -200,7 +204,7 @@ export async function runAgent(opts, deps = {}) {
       }
       const messages = [
         { role: "system", content: SYSTEM_POLICY + (opts.mode === "inspect"
-          ? "\\nINSPECT MODE: navigate only among safe project pages, tabs and menus. Do not fill, export or change anything. Identify actually visible creation/animation controls. Finish when useful UI evidence is collected; never claim to have seen images or generated assets."
+          ? "\\nINSPECT MODE: navigate only among safe project pages, tabs and menus. Do not fill, export or change anything. Identify actually visible creation/animation controls. On the Frost Ascent Design page, prioritize the Add Element link to inspect the new-asset creation flow; do not revisit the existing Yeti unless asked. Only open Toggle sidebar when navigation links are not visible. Never click Generate, Create, Save, Export, Publish, Billing or anything that may modify project state. Finish when useful UI evidence is collected; never claim to have seen images or generated assets."
           : "\\nEXPORT/PRODUCE MODE: follow the user's bounded task and all safety gates.") },
         { role: "user", content: "Task from the authenticated user: " + opts.task +
           "\nDo not spend RenderWolf credits unless specifically required and approved." },
