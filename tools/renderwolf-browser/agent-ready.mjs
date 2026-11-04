@@ -6,6 +6,25 @@ export const DEFAULT_READINESS_ATTEMPTS = 26; // 26 * 750ms ~= 19s
 export const DEFAULT_READINESS_INTERVAL_MS = 750;
 
 /**
+ * Identify only the observed, non-purchasing RenderWolf upsell dismissal.
+ * Never accept arbitrary dialog buttons, multiple matches or disabled controls.
+ * This allows the local agent to dismiss the offer before paying for model calls.
+ */
+export function findKnownUpsellDismissal(observation) {
+  if (!observation || !Array.isArray(observation.controls) ||
+      !(observation.context || []).some(text => /upgrade required/i.test(text))) {
+    return null;
+  }
+  const candidates = observation.controls.filter(control => {
+    const label = [control.label, control.title, control.text]
+      .filter(Boolean).join(" ").trim();
+    return control.tag === "button" && !control.disabled &&
+      /^maybe later$/i.test(label);
+  });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
  * RenderWolf keeps dashboard/sidebar controls mounted while the game /player
  * route hydrates. A nonempty control list is NOT proof the game workspace is
  * ready. Require a genuine game-specific control before spending model tokens.
