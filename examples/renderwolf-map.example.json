@@ -1,0 +1,24 @@
+{
+  "assets": [
+    {
+      "source": "characters/yeti.png",
+      "id": "character.yeti",
+      "role": "character"
+    },
+    {
+      "source": "backgrounds/aurora.webp",
+      "id": "background.aurora",
+      "role": "background"
+    },
+    {
+      "source": "symbols/wild.png",
+      "id": "symbol.wild",
+      "role": "symbol"
+    },
+    {
+      "source": "animations/yeti-win.webm",
+      "id": "animation.yeti.win",
+      "role": "animation"
+    }
+  ]
+}

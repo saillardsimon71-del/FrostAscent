@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Session RenderWolf</title>
+  <style>
+    body {font: 14px system-ui, sans-serif; width: 340px; margin: 0; padding: 18px; background: #101b2b; color: #f1f5f9;}
+    h1 {font-size: 18px; margin: 0 0 10px}
+    p {line-height: 1.45; color: #d4deeb}
+    button {background: #37a5de; color: #081522; border: 0; border-radius: 8px; padding: 11px 16px; width: 100%; font-weight: 700; cursor: pointer}
+    button:disabled {opacity: .5}
+    #status {font-size: 12px; min-height: 28px; color: #ffdc8d; white-space: pre-wrap}
+    strong {color: white}
+  </style>
+</head>
+<body>
+  <h1>Session RenderWolf</h1>
+  <p>Ouvre d’abord <strong>Slots Studio</strong> dans ton Chrome habituel et connecte-toi.</p>
+  <p>Ce bouton enregistre uniquement les cookies RenderWolf et le stockage de l’onglet RenderWolf actif. <strong>Le fichier est secret : ne le partage pas.</strong></p>
+  <button id="export">Exporter ma session localement</button>
+  <p id="status" role="status" aria-live="polite"></p>
+  <script src="popup.js"></script>
+</body>
+</html>

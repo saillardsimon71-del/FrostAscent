@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "RenderWolf session export (local only)",
+  "description": "Exports only your RenderWolf session to a local Playwright storageState file; no external network calls.",
+  "version": "0.1.0",
+  "permissions": [
+    "cookies",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://renderwolf.ai/*",
+    "https://*.renderwolf.ai/*"
+  ],
+  "action": {
+    "default_title": "Export RenderWolf session",
+    "default_popup": "popup.html"
+  }
+}

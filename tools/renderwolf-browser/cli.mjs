@@ -1,0 +1,166 @@
+#!/usr/bin/env node
+/**
+ * One-job-at-a-time Chromium connector for RenderWolf Slots Studio.
+ * No CAPTCHA bypass, no private endpoints, no credential scraping, no retries.
+ * CSS/role selectors are supplied after inspecting the actual user interface.
+ */
+import { chromium } from "playwright";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
+import {
+  parseArgs, loadConfig, HOME_PROFILE,
+  preparePrivateProfile, ensureNewExportDir,
+  safeFilename, writeMetadata,
+} from "./core.mjs";
+import { loadRenderwolfStorageState } from "./session.mjs";
+import { inspectVisibleInterface } from "./inspector.mjs";
+
+function displayPageUrl(page) {
+  const url = new URL(page.url());
+  return url.origin + url.pathname; // Never print OAuth codes or URL fragments.
+}
+
+function required(config, key) {
+  const selector = config.selectors[key];
+  if (!selector) throw new Error("Missing selector '" + key + "' in config");
+  return selector;
+}
+
+async function snapshot(page, outputDir, name) {
+  if (outputDir) await page.screenshot({
+    path: path.join(outputDir, name), fullPage: false, timeout: 20000,
+  });
+}
+
+async function inspect(page) {
+  // Restrict diagnostics to visible controls, prioritizing the Animation panel
+  // instead of slicing the first 120 buttons in the whole React tree.
+  const state = await inspectVisibleInterface(page);
+  console.log(JSON.stringify({ url: displayPageUrl(page), ...state }, null, 2));
+}
+
+async function pause(message) {
+  const rl = createInterface({ input, output });
+  try { await rl.question(message + "\nPress Enter to continue (Ctrl+C to abort). "); }
+  finally { rl.close(); }
+}
+
+async function generate(page, config, promptFile, outputDir) {
+  const prompt = await readFile(promptFile, "utf8");
+  if (!prompt.trim() || prompt.length > 15000) {
+    throw new Error("Prompt file must have 1-15000 characters");
+  }
+  const box = page.locator(required(config, "prompt"));
+  if (await box.count() !== 1) throw new Error("Prompt selector must match exactly one control");
+  await box.fill(prompt, { timeout: 12000 });
+  const button = page.locator(required(config, "generate"));
+  if (await button.count() !== 1) throw new Error("Generate selector must match exactly one control");
+  console.log("Clicking Generate once. This may spend RenderWolf credits.");
+  await button.click({ timeout: 12000 });
+  await snapshot(page, outputDir, "after-generate.png");
+  console.log("Generation click submitted. No repeat, no automatic retries.");
+  if (config.selectors.ready) {
+    await page.locator(config.selectors.ready).first().waitFor({
+      state: "visible", timeout: 300000,
+    });
+    console.log("Configured readiness selector became visible.");
+  } else {
+    await pause("Wait for the result visually. The provider's completion UI is not known.");
+  }
+  return { promptSha256: createHash("sha256").update(prompt).digest("hex") };
+}
+
+async function exportAsset(page, config, outputDir, metadata = {}) {
+  const menuSelector = config.selectors.exportMenu;
+  const exportSelector = required(config, "exportZip");
+  if (menuSelector) {
+    const menu = page.locator(menuSelector);
+    if (await menu.count() !== 1) throw new Error("Export menu selector must match one control");
+    await menu.click({ timeout: 12000 });
+  }
+  const button = page.locator(exportSelector);
+  if (await button.count() !== 1) throw new Error("Export selector must match one control");
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 90000 }),
+    button.click({ timeout: 12000 }),
+  ]);
+  const filename = safeFilename(download.suggestedFilename());
+  const dest = path.join(outputDir, filename);
+  await download.saveAs(dest);
+  const info = await stat(dest);
+  if (info.size === 0) throw new Error("Downloaded asset is empty");
+  const digest = createHash("sha256");
+  for await (const chunk of createReadStream(dest)) digest.update(chunk);
+  const sha256 = digest.digest("hex");
+  const receipt = {
+    schemaVersion: 1, provider: "renderwolf-slots-studio-browser",
+    source: displayPageUrl(page), downloadedFile: filename,
+    downloadedBytes: info.size, downloadedSha256: sha256,
+    ...metadata,
+    note: "Browser export, not proof of an official RenderWolf API.",
+  };
+  await writeMetadata(path.join(outputDir, "receipt.json"), receipt);
+  console.log(JSON.stringify(receipt, null, 2));
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const config = await loadConfig(opts.config);
+  const needsOutput = opts.action === "export" || opts.action === "full";
+  const outputDir = needsOutput ? path.resolve(opts.outputDir) : undefined;
+  if (needsOutput) await ensureNewExportDir(outputDir);
+
+  let browser;
+  let context;
+  if (opts.sessionFile) {
+    // Only the local RenderWolf cookies/storage are imported.
+    // Never print this state or send it to GitHub, logs, or third-party services.
+    const state = await loadRenderwolfStorageState(opts.sessionFile);
+    browser = await chromium.launch({ headless: false });
+    try {
+      context = await browser.newContext({
+        storageState: state, acceptDownloads: true,
+        viewport: { width: 1340, height: 850 },
+      });
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
+    console.log("Using local RenderWolf-only session file (secrets not shown).");
+  } else {
+    const profile = await preparePrivateProfile(opts.profile || HOME_PROFILE);
+    context = await chromium.launchPersistentContext(profile, {
+      headless: false, acceptDownloads: true,
+      viewport: { width: 1340, height: 850 },
+      // Do not disable browser security or anti-automation protections.
+    });
+  }
+  try {
+    const page = context.pages()[0] || await context.newPage();
+    await page.goto(opts.startUrl || config.url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    if (opts.action === "inspect") {
+      console.log("Log in manually if needed, and navigate to Slots Studio.");
+      await pause("Inspect your account interface in the Chromium window.");
+      await inspect(page);
+      return;
+    }
+    let metadata = {};
+    if (opts.action === "generate" || opts.action === "full") {
+      metadata = await generate(page, config, opts.promptFile, outputDir);
+    }
+    if (needsOutput) await exportAsset(page, config, outputDir, metadata);
+  } finally {
+    await context.close();
+    if (browser) await browser.close();
+  }
+}
+
+main().catch((err) => {
+  console.error("RenderWolf browser task stopped:", err.message);
+  console.error("No automatic retries. Inspect the UI/config before another run.");
+  process.exitCode = 1;
+});

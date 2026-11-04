@@ -1,0 +1,116 @@
+# DeepSeek Browser Agent — RenderWolf Slots Studio
+
+A bounded **DeepSeek Flash + Playwright** agent built on the authenticated RenderWolf bridge. The agent observes **visible DOM controls** (labels, roles, short text and screen positions) and chooses the next action with DeepSeek tool-calling. This first version uses structured DOM, not screenshot vision. There is no generic shell tool or browser evaluation tool exposed to the model.
+
+**Status:** Unit tests and CI can run without live credentials. Actual RenderWolf export behavior must be verified on your local authenticated PC. RenderWolf terms may prohibit automation; no attempt is made to bypass provider restrictions.
+
+## 1. Add the DeepSeek API key (Windows)
+
+Open PowerShell:
+
+    cd "$HOME\renderwolf-bridge"
+    git pull origin feat/renderwolf-export-bridge
+    cd .\tools\renderwolf-browser
+    Copy-Item .env.example .env.local
+    notepad .env.local
+
+Replace the placeholder in the .env.local file with your own DeepSeek key, exactly like:
+
+    DEEPSEEK_API_KEY=sk-your-secret-key
+
+Save the file. Local .env.local is ignored by Git through the .env.* rule. **Never paste your real key into GitHub or a chat**, and never commit the file. The key is loaded locally by Node and used only in the DeepSeek API authorization header. Setting the DEEPSEEK_API_KEY environment variable is also supported.
+
+The model is the currently documented deepseek-flash (non-thinking tool calling), via the official API endpoint https://api.deepseek.com/chat/completions. DeepSeek API usage can cost money; the tool limits steps (not cumulative tokens) and reports token usage. The DeepSeek API remains billable per request.
+
+## 2. First task: download EXISTING Yeti animation only
+
+The existing Chrome extension has already exported a local renderwolf-session.json from your regular Chrome. Keep that file **only on your PC**, never on GitHub or in chat. Open PowerShell in the tools/renderwolf-browser directory and run:
+
+    node agent.mjs --task "Télécharge l'animation déjà existante du Yéti en sprite sheet 4x4. Choisis Both sheets (.zip), puis Download. Ne génère, ne régénère et ne modifie rien." --session-file "$HOME\Downloads\renderwolf-session.json" --start-url "https://slots.renderwolf.ai/games/1785165208846/design/character_symbol_set_1785165292435_symbol_1/extra/animation" --output-dir "$HOME\Downloads\renderwolf-yeti-agent-01" --max-steps 12
+
+The output directory must not exist. If repeating a run, use a new folder name. The agent opens a fresh Chromium context with your RenderWolf session, reads the existing animation interface and chooses the next visible control.
+
+If successful, the new directory will contain the downloaded ZIP and an agent-report.json receipt recording file size and SHA-256. The download is the actual success criterion, not a claim by the AI model.
+
+## 3. Guardrails
+
+- One model-requested UI action per iteration; 12 steps default, hard cap 24.
+- No cumulative DeepSeek token cutoff. Token use is tracked in the final report; the agent may still incur API costs. No automatic retries.
+- If the agent tries the same click on an unchanged interface for a third consecutive time, it stops and saves a local screenshot for diagnosis.
+- Up to five exports, up to 256 MiB each; never overwrites existing files.
+- Navigation restricted to RenderWolf HTTPS. No generic browser JS or shell access is exposed to DeepSeek.
+- Payment, billing, credit purchases, logout, publication and destructive actions are blocked.
+- Generation, regeneration and AI editing are **blocked by default**.
+- With --allow-generation, at most one generation/modification click is considered, and it requires typing AUTORISER at the terminal. No unattended credit-consuming generations.
+- Cookies, browser storage, form values, images, raw HTML and screenshots are **not sent to DeepSeek**.
+- Only compact visible UI labels, screen coordinates, and the user's task are sent to DeepSeek; visible text could be sensitive, so use on the dedicated RenderWolf UI only.
+- The agent reports incomplete results truthfully; step limit and controls are not proof of successful download.
+
+Watch the first run in Chromium. You can press Ctrl+C to stop. A manual export remains a fallback.
+
+## 4. Architecture
+
+- The existing Chrome extension exports authentication to a local file.
+- Node opens an isolated Playwright Chromium context using that file.
+- DeepSeek sees structured visible interface controls and suggests one tool call: click, fill, wait, or finish.
+- Local validation rejects unsafe actions and invalid target IDs.
+- Playwright clicks the chosen control and observes the new state.
+- On download, the file is saved and SHA-256 verified. The existing Python renderwolf_bridge.py can then import the asset into the PixiJS studio.
+
+This is a first agent implementation, **not yet a proven live RenderWolf generation/export integration**.
+
+## 5. Tests
+
+From the repository root:
+
+    node --test tools/renderwolf-browser/test-agent.mjs
+
+Or from the browser folder:
+
+    npm test
+    node --check agent.mjs
+
+GitHub Actions validates the pure agent logic and source syntax. It does not consume DeepSeek credits or access RenderWolf.
+
+## Troubleshooting
+
+- Missing local .env.local: copy .env.example to .env.local and fill the key.
+- HTTP 401: DeepSeek key was rejected.
+- HTTP 402: DeepSeek API balance is insufficient.
+- Chromium asks for Google: re-export the RenderWolf session from normal Chrome; do not share that file.
+- Output directory already exists: choose another directory name.
+- No visible browser controls: check that RenderWolf finished loading.
+- Generation blocked: this is intentional; first task downloads only the existing Yeti animation.
+- If the agent exhausts 12 steps or repeatedly clicks the same unchanged control, check the local agent-report.json and, when available, stalled-page.png. Each attempted action is also listed in actionTrace.
+
+**Account caution:** RenderWolf can restrict automated access in its terms; use at your own risk.
+
+
+## Export clicked but agent reported incomplete (November 2026 fix)
+
+Earlier versions waited only 2.5 seconds for a download event on the original tab. RenderWolf can spend longer preparing an animation spritesheet, or trigger a download in another tab. This could show an export in Chromium while the agent recorded no saved file, reopened the export menu, and hit the repeated-click guard.
+
+The current browser agent now:
+- listens for downloads from **every page in the Chromium context**, including popups;
+- waits up to 60 seconds after the final "Download" button before concluding;
+- **saves and verifies** the actual downloaded bytes with SHA-256 and stops without another DeepSeek call;
+- never counts a mere click as proof of export;
+- if no verified download appears after the final click, writes a local screenshot named download-not-observed.png and records an incomplete report, **without re-clicking**.
+
+Before repeating a run, check your normal Downloads folder for a previously saved ZIP; you may not need to generate/export twice. The file must exist in the agent output folder and be listed in the report's downloads array to count as verified.
+
+Use a new destination folder, such as renderwolf-yeti-agent-04, when you retry. The latest browser agent never overwrites an earlier export.
+
+
+## Yeti 4×4 repeated-selection correction
+
+Observed on the real account: the agent opened Download animation → Download sprite sheet…, selected 4×4, then kept selecting 4×4 without clicking the final Download button. No file was recorded; the repeated-click stop correctly prevented further looping.
+
+The current version includes two changes:
+
+- The UI observation now exposes selected/checked state from native controls, ARIA properties and recognized data-state attributes.
+- On the **animation editor only**, when the AI proposes a repeated grid-size selection (such as 4×4) while there is exactly one visible, enabled final Download button, the local guard advances to that Download action instead. If the user explicitly requested Both sheets and one visible Both sheets option is known to be unselected, it selects that option first. Ambiguous or disabled buttons are never guessed.
+
+This is a targeted UI recovery, **not a guarantee of the export format**. Inspect the actual saved ZIP to confirm it contains the requested transparent and opaque sheets before integration into Frost Ascent. The existing no-repeat and no-credit safeguards remain in place.
+
+Re-run using a **new** output directory, for example renderwolf-yeti-agent-05. Check agent-report.json for status="exported" and at least one entry in downloads. CI does not execute an authenticated RenderWolf browser session.
