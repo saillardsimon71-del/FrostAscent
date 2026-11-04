@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseAgentArgs, validateAgentAction, classifyControl,
-  publicPageUrl, readLocalDeepSeekKey, redactForModel } from "./agent-core.mjs";
+  publicPageUrl, readLocalDeepSeekKey, redactForModel, canInspectAction } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
 import { waitForRenderwolfUI, isUsefulObservation } from "./agent-ready.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
@@ -261,4 +261,94 @@ test("recovery refuses ambiguous, disabled, off-domain, destructive controls", (
       {id:3,tag:"button",text:"Download"},
     ]},
   }),null);
+});
+
+
+test("inspect mode is explicit, navigation-only and cannot enable generation", () => {
+  const inspect = parseAgentArgs([...basic, "--mode", "inspect"]);
+  assert.equal(inspect.mode, "inspect");
+  assert.equal(parseAgentArgs(basic).mode, "export");
+  assert.equal(parseAgentArgs([...basic, "--mode", "produce", "--allow-generation"]).mode, "produce");
+  assert.throws(() => parseAgentArgs([...basic, "--mode", "produce"]), /requires --allow-generation/);
+  assert.throws(() => parseAgentArgs([...basic, "--mode", "inspect", "--allow-generation"]), /incompatible/);
+  assert.throws(() => parseAgentArgs([...basic, "--mode", "unknown"]), /mode must/);
+  const click = {action:"click",target_id:1};
+  assert.equal(canInspectAction(click,{tag:"a",label:"Frost Ascent"}),true);
+  assert.equal(canInspectAction(click,{tag:"button",role:"tab",label:"Design"}),true);
+  assert.equal(canInspectAction(click,{tag:"button",label:"Projects"}),true);
+  assert.equal(canInspectAction(click,{tag:"button",label:"Generate artwork"}),false);
+  assert.equal(canInspectAction(click,{tag:"a",label:"Download sprite sheet"}),false);
+  assert.equal(canInspectAction(click,{tag:"button",label:"Create image"}),false);
+  assert.equal(canInspectAction(click,{tag:"button",label:"Delete game"}),false);
+  assert.equal(canInspectAction({action:"fill",target_id:1},{tag:"textarea",label:"Prompt"}),false);
+  assert.equal(canInspectAction({action:"wait"},undefined),true);
+  assert.equal(canInspectAction({action:"finish"},undefined),true);
+});
+
+test("DeepSeek repairs malformed JSON once then succeeds; usage includes bad reply", async () => {
+  const raw = [
+    {choices:[{message:{tool_calls:[{id:"a",type:"function",function:{name:"act",arguments:'{"action":"click","target_id":'}}]}}],usage:{total_tokens:110,prompt_tokens:100,completion_tokens:10}},
+    {choices:[{message:{tool_calls:[{id:"b",type:"function",function:{name:"act",arguments:'{"action":"finish","summary":"inspected"}'}}]}}],usage:{total_tokens:90,prompt_tokens:80,completion_tokens:10}},
+  ];
+  let calls=0;
+  const transport=async (url,opts)=>{
+    const request=JSON.parse(opts.body);
+    if(calls===1) {
+      assert.match(request.messages.at(-1).content,/complete JSON arguments/);
+      assert.equal(request.tool_choice,"required");
+    }
+    return {ok:true,json:async()=>raw[calls++]};
+  };
+  const r=await requestDeepSeekAction({apiKey:"sk-test",messages:[{role:"user",content:"Inspect the project"}],transport});
+  assert.equal(r.action.action,"finish");
+  assert.equal(r.attempts,2);
+  assert.equal(r.recoveries,1);
+  assert.equal(r.usage.total_tokens,200);
+  assert.equal(r.unknownUsageRequests,0);
+  assert.equal(calls,2);
+});
+
+test("DeepSeek retries at most twice for missing, malformed or unsupported tool calls", async () => {
+  let calls=0;
+  const invalid=[
+    {choices:[{message:{tool_calls:[]}}],usage:{total_tokens:10}},
+    {choices:[{message:{tool_calls:[{id:"x",type:"function",function:{name:"act",arguments:'{"action":"fill"'}}]}}],usage:{total_tokens:11}},
+    {choices:[{message:{tool_calls:[{id:"y",type:"function",function:{name:"shell",arguments:"{}"}}]}}],usage:{total_tokens:12}},
+  ];
+  await assert.rejects(
+    requestDeepSeekAction({
+      apiKey:"sk-test",messages:[],
+      transport:async()=>({ok:true,json:async()=>invalid[calls++]}),
+    }),
+    e=>{
+      assert.match(e.message,/after 3 attempts/);
+      assert.equal(e.attempts,3);
+      assert.equal(e.usage.total_tokens,33);
+      return true;
+    }
+  );
+  assert.equal(calls,3);
+});
+
+test("DeepSeek retains usage uncertainty and never retries HTTP failures", async()=>{
+  let calls=0;
+  await assert.rejects(
+    requestDeepSeekAction({
+      apiKey:"sk-test",messages:[],
+      transport:async()=>{calls++;return {ok:false,status:402};},
+    }),
+    e=> e.message==="DeepSeek API error HTTP 402" && e.attempts===1 &&
+      e.unknownUsageRequests===1
+  );
+  assert.equal(calls,1);
+  const result=await requestDeepSeekAction({
+    apiKey:"sk-test",messages:[],
+    transport:async()=>({ok:true,json:async()=>({
+      choices:[{message:{tool_calls:[{
+        id:"ok",type:"function",function:{name:"act",arguments:'{"action":"finish"}'}
+      }]}}],
+    })}),
+  });
+  assert.equal(result.unknownUsageRequests,1);
+  assert.equal(result.usage.total_tokens,0);
 });
