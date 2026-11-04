@@ -68,9 +68,12 @@ export function createDownloadTracker(context, saveFile, { maxFiles = 5 } = {}) 
 }
 
 export function isFinalDownloadButton(control) {
-  const name = [control?.label, control?.text, control?.title]
-    .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-  // Intermediate entries such as "Download animation" and
-  // "Download sprite sheet..." open menus but do not start a file.
-  return /^(download|save|export)(?:\s*\.(?:zip|png|webm|mp4))?$/i.test(name);
+  const names = [control?.label, control?.text, control?.title]
+    .filter(Boolean).map(s=>String(s).replace(/\s+/g, " ").trim());
+  // Inspect each accessibility label independently: a button can have BOTH
+  // aria-label="Download" and text="Download", without becoming
+  // "Download Download". Intermediate menu entries are NOT final actions.
+  return names.some(name =>
+    /^(download|save|export)(?:\s*\.(?:zip|png|webm|mp4))?$/i.test(name)
+  );
 }
