@@ -150,6 +150,8 @@ export async function runAgent(opts, deps = {}) {
   let previousClickFingerprint = null;
   let sameClickCount = 0;
   const actionTrace = [];
+  let afterAddElement = null;
+  let readinessFailure = null;
   try {
     const context = await browser.newContext({
       storageState: state, acceptDownloads: opts.mode !== "inspect",
@@ -175,17 +177,31 @@ export async function runAgent(opts, deps = {}) {
         requireAnimationDownload: i === 0 && opts.startUrl.endsWith("/extra/animation"),
         requireGameWorkspace: onGamePlayer,
         requireDesignWorkspace: onDesignPage,
+        requireFreshFrom: afterAddElement,
       });
       const observation = pending.observation;
       if (pending.polls > 1) console.log("UI readiness polling: " + pending.polls + " checks");
       if (!pending.ready) {
+        readinessFailure = {
+          url: observation?.url || publicPageUrl(page.url()),
+          reason: afterAddElement ? "No new creation controls detected after Add Element" :
+            onDesignPage ? "Design workspace controls not detected" : "UI not ready",
+          context: (observation?.context || []).slice(0, 12),
+          controls: (observation?.controls || []).slice(0, 50).map(c => ({
+            tag: c.tag, role: c.role,
+            label: [c.label, c.title, c.text, c.placeholder].filter(Boolean).join(" ").slice(0, 100),
+          })),
+        };
         const diagnostic = await writeEmptyPageDiagnostics(page, opts.outputDir);
         console.log("RenderWolf interface not ready. Diagnostic screenshot: " + diagnostic.screenshotPath);
-        completion = onGamePlayer
+        completion = afterAddElement
+          ? "Add Element opened, but no new creation form was detected; inspect page-not-ready.png and readinessFailure in the report."
+          : onGamePlayer
           ? "Player route showed only dashboard controls (no verified game workspace); screenshot saved. Do not retry the dashboard card."
           : "RenderWolf UI not ready; screenshot and diagnostic JSON saved locally";
         break;
       }
+      afterAddElement = null;
       console.log("Step " + steps + "/" + opts.maxSteps +
         " - " + observation.url +
         " (" + observation.controls.length + " visible controls)");
@@ -293,6 +309,11 @@ export async function runAgent(opts, deps = {}) {
       }
       console.log(toolOutput.action + ": " + (toolOutput.ok ? "ok" : "blocked/failed") +
         (toolOutput.downloaded ? " downloaded=" + toolOutput.downloaded : ""));
+      if (opts.mode === "inspect" && toolOutput.ok &&
+          actualAction.action === "click" && /^add element$/i.test(label.trim())) {
+        // Subsequent step expects a new creation wizard, not the old asset list.
+        afterAddElement = observation;
+      }
       if (opts.mode === "inspect" && toolOutput.ok === false) {
         // Repeating a rejected action against an unchanged DOM burns API credits.
         // Report the precise blocker instead of asking DeepSeek the same question.
@@ -335,6 +356,7 @@ export async function runAgent(opts, deps = {}) {
       deepseekRequests: modelRequests,
       deepseekRequestsWithoutReportedUsage: unknownUsageRequests,
       observedScreens,
+      readinessFailure,
       downloads: files,
       downloadErrors: downloadTracker?.errors || [],
       actionTrace,
