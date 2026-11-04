@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseAgentArgs, validateAgentAction, classifyControl,
   publicPageUrl, readLocalDeepSeekKey, redactForModel } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
+import { waitForRenderwolfUI, isUsefulObservation } from "./agent-ready.mjs";
 
 const start = "https://slots.renderwolf.ai/games/1785165208846/design/character_symbol_set_1785165292435_symbol_1/extra/animation";
 const basic = ["--task", "Télécharge l'animation existante du Yéti",
@@ -109,4 +110,43 @@ test("DeepSeek transport sends only tool schema and sanitized observations",asyn
   assert.equal(ACT_TOOL.function.name,"act");
   assert.equal(result.action.action,"finish");
   assert.equal(result.usage.total_tokens,22);
+});
+
+
+test("SPA hydration wait avoids premature DeepSeek requests",async()=>{
+  let counter=0, slept=0;
+  const browser={waitForTimeout:async()=>{slept++;}};
+  const read=async()=>({controls:counter++<3?[]:[{id:0,label:"Download animation"}]});
+  const result=await waitForRenderwolfUI(browser,read,{attempts:6,intervalMs:1});
+  assert.equal(result.ready,true);
+  assert.equal(result.polls,4);
+  assert.equal(slept,3);
+  assert.equal(result.observation.controls[0].label,"Download animation");
+});
+
+test("animation editor requires actual Download animation control on first render",async()=>{
+  const states=[
+    {controls:[{id:0,label:"Toggle sidebar"}]},
+    {controls:[{id:0,label:"Download animation"}]},
+  ];
+  const browser={waitForTimeout:async()=>{}};
+  const result=await waitForRenderwolfUI(browser,async()=>states.shift(),{
+    requireAnimationDownload:true,attempts:3,intervalMs:0,
+  });
+  assert.equal(result.polls,2);
+  assert.equal(result.ready,true);
+  assert.equal(isUsefulObservation({controls:[{id:0,label:"Toggle sidebar"}]},
+    {requireAnimationDownload:true}),false);
+});
+
+test("no control after readiness attempts returns diagnostic-worthy failure",async()=>{
+  let calls=0;
+  const browser={waitForTimeout:async()=>{}};
+  const result=await waitForRenderwolfUI(browser,async()=>{
+    calls++;
+    return {controls:[]};
+  },{attempts:4,intervalMs:0});
+  assert.equal(calls,4);
+  assert.equal(result.ready,false);
+  assert.equal(result.polls,4);
 });
