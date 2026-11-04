@@ -477,3 +477,14 @@ test("direct design route waits for assets instead of using global navigation",a
   assert.equal(result.ready,true);
   assert.equal(result.polls,4);
 });
+
+
+test("direct /design route can dismiss existing non-purchasing upgrade offer",()=>{
+  const offer={url:"https://slots.renderwolf.ai/games/1785165208846/design",
+    context:["Upgrade Required Subscribe to unlock full access"],
+    controls:[{tag:"button",label:"Subscribe Now"},{tag:"button",label:"Maybe Later"}]};
+  assert.equal(hasDesignWorkspaceControls(offer),true);
+  assert.equal(canInspectAction({action:"click",target_id:1},offer.controls[1],offer),true);
+  assert.equal(canInspectAction({action:"click",target_id:0},offer.controls[0],offer),false);
+  assert.equal(hasDesignWorkspaceControls({...offer,context:["Frost Ascent"]}),false);
+});
