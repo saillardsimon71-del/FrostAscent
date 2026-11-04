@@ -73,6 +73,7 @@ test("actual Download button waits, menu Download actions do not", () => {
   assert.equal(isFinalDownloadButton({ text: "Download sprite sheet…" }), false);
   assert.equal(isFinalDownloadButton({ text: "Both sheets (.zip)" }), false);
   assert.equal(isFinalDownloadButton({ label: "Export" }), true);
+  assert.equal(isFinalDownloadButton({ label: "Download", text: "Download" }), true);
 });
 
 test("timeout does not pretend a download happened", async () => {
