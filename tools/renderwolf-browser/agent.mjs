@@ -15,7 +15,8 @@ import { parseAgentArgs, validateAgentAction, readLocalDeepSeekKey,
   publicPageUrl, canInspectAction, isRenderwolfPage } from "./agent-core.mjs";
 import { loadRenderwolfStorageState } from "./session.mjs";
 import { observeRenderwolfPage, TARGET_ATTR } from "./agent-observe.mjs";
-import { waitForRenderwolfUI, writeEmptyPageDiagnostics } from "./agent-ready.mjs";
+import { waitForRenderwolfUI, writeEmptyPageDiagnostics,
+  findKnownUpsellDismissal } from "./agent-ready.mjs";
 import { requestDeepSeekAction, SYSTEM_POLICY } from "./deepseek-client.mjs";
 import { safeFilename } from "./core.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
@@ -152,6 +153,7 @@ export async function runAgent(opts, deps = {}) {
   const actionTrace = [];
   let afterAddElement = null;
   let readinessFailure = null;
+  let dismissedUpsells = 0;
   try {
     const context = await browser.newContext({
       storageState: state, acceptDownloads: opts.mode !== "inspect",
@@ -200,6 +202,30 @@ export async function runAgent(opts, deps = {}) {
           ? "Player route showed only dashboard controls (no verified game workspace); screenshot saved. Do not retry the dashboard card."
           : "RenderWolf UI not ready; screenshot and diagnostic JSON saved locally";
         break;
+      }
+      // The known offer is a UI overlay, not an account restriction. Close it
+      // before asking DeepSeek; the model previously spent tokens on "finish".
+      // Only the exact, uniquely visible Maybe Later control may be clicked.
+      const upsell = opts.mode === "inspect" && dismissedUpsells < 2
+        ? findKnownUpsellDismissal(observation) : null;
+      if (upsell) {
+        const locator = page.locator("[" + TARGET_ATTR + "=\"" + upsell.id + "\"]");
+        try {
+          if (await locator.count() !== 1) throw new Error("Dismiss control changed");
+          await locator.click({ timeout: 10000 });
+        } catch {
+          completion = "Known upsell dismiss click failed; no model call or payment attempted";
+          break;
+        }
+        dismissedUpsells++;
+        actionTrace.push({ action: "click", target: "Maybe Later", automatic: true });
+        console.log("Dismissed known RenderWolf upsell locally (no DeepSeek call).");
+        await page.waitForTimeout(450);
+        // The inspection step is reserved for the actual page controls, not
+        // the promotional overlay; keep transitions from Add Element intact.
+        steps--;
+        i--;
+        continue;
       }
       afterAddElement = null;
       console.log("Step " + steps + "/" + opts.maxSteps +
@@ -355,6 +381,7 @@ export async function runAgent(opts, deps = {}) {
       deepseekTokens: totalTokens,
       deepseekRequests: modelRequests,
       deepseekRequestsWithoutReportedUsage: unknownUsageRequests,
+      automaticallyDismissedUpsells: dismissedUpsells,
       observedScreens,
       readinessFailure,
       downloads: files,
