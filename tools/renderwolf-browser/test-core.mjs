@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseArgs, validateConfig, safeFilename, sha256Buffer } from "./core.mjs";
+import { parseArgs, validateConfig, validateStartUrl, safeFilename, sha256Buffer } from "./core.mjs";
 import { sanitizeRenderwolfStorageState, isRenderwolfHost } from "./session.mjs";
 
 test("inspect command requires config", () => {
@@ -89,4 +89,15 @@ test("reject empty auth, extraneous passkey credentials, oversized or duplicated
   const duplicate = structuredClone(validSession);
   duplicate.cookies.push(structuredClone(duplicate.cookies[0]));
   assert.throws(() => sanitizeRenderwolfStorageState(duplicate), /Duplicate/);
+});
+
+test("inspect a specific RenderWolf Yeti page safely", () => {
+  const target = "https://slots.renderwolf.ai/games/1785165208846/design/character_symbol_set_1785165292435_symbol_1";
+  const args = parseArgs(["inspect", "--config", "selectors.local.json", "--start-url", target]);
+  assert.equal(args.startUrl, target);
+  assert.equal(validateStartUrl(target), target);
+  assert.throws(() => validateStartUrl("https://slots.renderwolf.ai/path?token=secret"), /start-url/);
+  assert.throws(() => validateStartUrl("http://slots.renderwolf.ai/path"), /start-url/);
+  assert.throws(() => validateStartUrl("https://fake-slots.renderwolf.ai.evil.test/"), /start-url/);
+  assert.throws(() => validateStartUrl("https://slots.renderwolf.ai/#access_token=private"), /start-url/);
 });
