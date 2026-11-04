@@ -19,6 +19,7 @@ import { waitForRenderwolfUI, writeEmptyPageDiagnostics } from "./agent-ready.mj
 import { requestDeepSeekAction, SYSTEM_POLICY } from "./deepseek-client.mjs";
 import { safeFilename } from "./core.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
+import { createDownloadTracker, isFinalDownloadButton } from "./agent-download.mjs";
 
 async function confirmGeneration(control) {
   if (!stdin.isTTY) return false;
@@ -31,9 +32,10 @@ async function confirmGeneration(control) {
   } finally { rl.close(); }
 }
 
-async function saveDownload(download, outDir, files) {
-  if (files.length >= 5) throw new Error("Maximum five exported files per run");
+async function saveDownload(download, outDir, reservedNames) {
   const filename = safeFilename(download.suggestedFilename());
+  if (reservedNames.has(filename)) throw new Error("Duplicate downloaded filename");
+  reservedNames.add(filename);
   const dest = path.join(outDir, filename);
   try { await access(dest); throw new Error("Refusing overwrite of " + filename); }
   catch (e) { if (e.code !== "ENOENT") throw e; }
@@ -47,12 +49,11 @@ async function saveDownload(download, outDir, files) {
   const receipt = {
     filename, bytes: info.size, sha256: hash.digest("hex"),
   };
-  files.push(receipt);
-  console.log("Downloaded " + filename + " (" + Math.round(info.size / 1024) + " KiB)");
+  console.log("Downloaded and verified " + filename + " (" + Math.round(info.size / 1024) + " KiB)");
   return receipt;
 }
 
-async function performAction(page, opts, observation, action, downloads) {
+async function performAction(page, opts, observation, action, downloadTracker) {
   const normalized = validateAgentAction(action, observation);
   if (normalized.action === "finish") {
     return { finished: true, summary: normalized.summary || "Task finished" };
@@ -86,19 +87,29 @@ async function performAction(page, opts, observation, action, downloads) {
     await page.waitForTimeout(350);
     return { action: "fill", ok: true, reason: "Field filled (value not logged)" };
   }
-  const mayDownload = /download|export|zip|save/i.test(
+  // Observe downloads across the whole browser context, including popups,
+  // BEFORE clicking. Intermediate "Download animation" buttons merely open menus.
+  const priorFiles = downloadTracker.files.length;
+  const finalDownload = isFinalDownloadButton(target);
+  const likelyExport = /download|export|zip|save/i.test(
     [target.label, target.title, target.text].join(" ")
   );
-  if (mayDownload) {
-    const pending = page.waitForEvent("download", { timeout: 2500 }).catch(() => null);
-    await locator.click({ timeout: 10000 });
-    const file = await pending;
-    if (file) {
-      const receipt = await saveDownload(file, opts.outputDir, downloads);
-      return { action: "click", ok: true, downloaded: receipt.filename };
+  await locator.click({ timeout: 10000 });
+  if (likelyExport) {
+    if (finalDownload) console.log("Waiting for RenderWolf to prepare and save the export...");
+    const outcome = await downloadTracker.waitForExport({
+      after: priorFiles, timeoutMs: finalDownload ? 60000 : 900,
+    });
+    if (outcome.saved) {
+      return { action: "click", ok: true, downloaded: outcome.file.filename };
     }
-  } else {
-    await locator.click({ timeout: 10000 });
+    if (finalDownload) {
+      // Do NOT click Download again: a delayed job could have already started.
+      return {
+        action: "click", ok: false, downloadNotObserved: true,
+        reason: outcome.error || "No verified download observed",
+      };
+    }
   }
   await page.waitForTimeout(400);
   if (!page.isClosed() && !publicPageUrl(page.url())) {
@@ -116,7 +127,8 @@ export async function runAgent(opts, deps = {}) {
   await mkdir(outDir);
   opts = { ...opts, outputDir: outDir, generationClicks: 0 };
   const browser = await chromium.launch({ headless: false });
-  const files = [];
+  let files = [];
+  let downloadTracker;
   let totalTokens = 0;
   let completion = "Stopped before completing";
   let steps = 0;
@@ -129,6 +141,10 @@ export async function runAgent(opts, deps = {}) {
       storageState: state, acceptDownloads: true,
       viewport: { width: 1340, height: 850 },
     });
+    const reservedNames = new Set();
+    downloadTracker = createDownloadTracker(context,
+      (download) => saveDownload(download, opts.outputDir, reservedNames));
+    files = downloadTracker.files;
     const page = await context.newPage();
     await page.goto(opts.startUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
     publicPageUrl(page.url());
@@ -189,14 +205,31 @@ export async function runAgent(opts, deps = {}) {
       actionTrace.push({ step: steps, action: String(result.action?.action || "unknown"), target: label });
       let toolOutput;
       try {
-        toolOutput = await performAction(page, opts, observation, result.action, files);
+        toolOutput = await performAction(page, opts, observation, result.action, downloadTracker);
       } catch (error) {
         // Never send exception stack, browser URL parameters, secrets or page HTML.
         toolOutput = { action: "error", ok: false, reason: String(error.message).slice(0, 180) };
       }
+      if (files.length > 0) {
+        completion = "Verified export saved to output directory";
+        status = "exported";
+        console.log("Export verified; stopping without additional DeepSeek calls.");
+        break;
+      }
+      if (toolOutput.downloadNotObserved) {
+        completion = "Download action clicked but no file was verified; no retry attempted";
+        try {
+          await page.screenshot({
+            path: path.join(opts.outputDir, "download-not-observed.png"),
+            timeout: 12000, fullPage: false,
+          });
+        } catch { /* Screenshot is best-effort. */ }
+        console.log(completion + "; screenshot saved if possible.");
+        break;
+      }
       if (toolOutput.finished) {
         completion = toolOutput.summary;
-        status = files.length ? "exported" : "finished-without-download";
+        status = "finished-without-download";
         break;
       }
       console.log(toolOutput.action + ": " + (toolOutput.ok ? "ok" : "blocked/failed") +
@@ -215,9 +248,15 @@ export async function runAgent(opts, deps = {}) {
         break;
       }
     }
+    await downloadTracker.flush();
     await context.close();
   } finally {
+    if (downloadTracker) await downloadTracker.flush();
     await browser.close();
+    if (files.length && status !== "exported") {
+      status = "exported";
+      completion = "Verified export saved to output directory";
+    }
     const report = {
       provider: "renderwolf-slots-studio",
       engine: "deepseek-flash+playwright",
@@ -227,6 +266,7 @@ export async function runAgent(opts, deps = {}) {
       steps,
       deepseekTokens: totalTokens,
       downloads: files,
+      downloadErrors: downloadTracker?.errors || [],
       actionTrace,
       note: "No RenderWolf generation/export success is claimed unless a file is listed.",
     };
