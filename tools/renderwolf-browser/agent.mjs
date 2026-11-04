@@ -64,7 +64,7 @@ async function performAction(page, opts, observation, action, downloadTracker) {
     return { action: "wait", ok: true };
   }
   const target = observation.controls.find((x) => x.id === normalized.target_id);
-  if (opts.mode === "inspect" && !canInspectAction(normalized, target)) {
+  if (opts.mode === "inspect" && !canInspectAction(normalized, target, observation)) {
     return { action: normalized.action, ok: false, reason: "Inspection is navigation-only; control blocked" };
   }
   if (target.disabled) return { action: normalized.action, ok: false, reason: "Control is disabled" };
@@ -284,6 +284,13 @@ export async function runAgent(opts, deps = {}) {
       }
       console.log(toolOutput.action + ": " + (toolOutput.ok ? "ok" : "blocked/failed") +
         (toolOutput.downloaded ? " downloaded=" + toolOutput.downloaded : ""));
+      if (opts.mode === "inspect" && toolOutput.ok === false) {
+        // Repeating a rejected action against an unchanged DOM burns API credits.
+        // Report the precise blocker instead of asking DeepSeek the same question.
+        completion = "Inspection stopped at blocked/failed navigation: " +
+          String(toolOutput.reason || "unknown reason").slice(0, 130);
+        break;
+      }
       history.push({
         role: "assistant", content: null,
         tool_calls: [result.call],
