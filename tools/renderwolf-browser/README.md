@@ -96,3 +96,18 @@ Do not combine --session-file and --profile. When a session file is given, the s
 - Session cookies can expire, be invalidated at logout, or be bound to the original browser. No bypass is attempted.
 - No browser account, generation, or RenderWolf UI compatibility has been verified through these unit tests.
 - Delete renderwolf-session.json after using it; uninstall the unpacked extension if not needed.
+
+
+## Focused read-only inspection: existing Yeti animation
+
+The initial inspect command listed the first 120 controls in the whole React tree. On the Yeti editor that missed the animation panel. The new version checks only visible elements and prioritizes controls near the visible Animation heading. It does **not** click anything or spend credits.
+
+In PowerShell, update your checkout then run:
+
+    git pull origin feat/renderwolf-export-bridge
+    cd tools/renderwolf-browser
+    node cli.mjs inspect --config selectors.local.json --session-file "$HOME\Downloads\renderwolf-session.json" --start-url "https://slots.renderwolf.ai/games/1785165208846/design/character_symbol_set_1785165292435_symbol_1"
+
+In the opened Chromium window, verify the Yeti element and click the **already existing animation thumbnail** (not a Regenerate or Generate button) to open its details. Return to PowerShell and press Enter. The resulting diagnostic includes only safe display metadata (labels, titles, positions; no form values, cookie contents, URL query strings, image source URLs or raw HTML).
+
+If the animation detail opens in another tab, copy its page address into the original Chromium tab before pressing Enter. The read-only inspection locates candidate controls; it does not yet prove which click downloads the animation. Review a targeted download action before enabling it.
