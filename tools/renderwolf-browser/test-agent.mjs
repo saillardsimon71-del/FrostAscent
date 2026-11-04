@@ -5,6 +5,7 @@ import { parseAgentArgs, validateAgentAction, classifyControl,
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
 import { waitForRenderwolfUI, isUsefulObservation } from "./agent-ready.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
+import { recoverRepeatedSheetChoice } from "./agent-export-recovery.mjs";
 
 const start = "https://slots.renderwolf.ai/games/1785165208846/design/character_symbol_set_1785165292435_symbol_1/extra/animation";
 const basic = ["--task", "Télécharge l'animation existante du Yéti",
@@ -184,4 +185,80 @@ test("change of UI or action clears stalled-click count", () => {
   assert.equal(countSameClick(previous,2,current),1);
   assert.equal(actionFingerprint(changed,{action:"wait"}),null);
   assert.equal(countSameClick(current,2,null),0);
+});
+
+
+test("recover second repeated 4×4 click by clicking only final Download", () => {
+  const observation = {
+    url: "https://slots.renderwolf.ai/games/example/extra/animation",
+    controls: [
+      {id: 1, tag: "button", label: "Download sprite sheet…"},
+      {id: 2, tag: "button", text: "4×4"},
+      {id: 3, tag: "button", text: "Download", label: "Download"},
+    ],
+  };
+  const task = "Télécharge l'animation existante 4x4, Both sheets (.zip)";
+  const first = recoverRepeatedSheetChoice({
+    observation, action: {action:"click",target_id:2}, repeatCount:1, task,
+  });
+  assert.equal(first, null);
+  const recovered = recoverRepeatedSheetChoice({
+    observation, action: {action:"click",target_id:2}, repeatCount:2, task,
+  });
+  assert.deepEqual(recovered.action, {action:"click",target_id:3});
+});
+
+test("selected 4×4 choice advances straight to Download", () => {
+  const observation = {
+    url: "https://slots.renderwolf.ai/games/example/extra/animation",
+    controls: [
+      {id: 2, tag: "button", text:"4×4", selected:true},
+      {id: 3, tag: "button", text:"Download"},
+    ],
+  };
+  const result = recoverRepeatedSheetChoice({
+    observation, action:{action:"click",target_id:2}, repeatCount:1,
+    task:"Télécharge l'animation 4x4",
+  });
+  assert.equal(result.action.target_id,3);
+});
+
+test("honors explicitly requested Both sheets when visibly unselected", () => {
+  const observation = {
+    url:"https://slots.renderwolf.ai/games/example/extra/animation",
+    controls: [
+      {id:1,tag:"button",text:"4×4",selected:true},
+      {id:2,tag:"button",text:"Both sheets (.zip)",selected:false},
+      {id:3,tag:"button",text:"Download"},
+    ],
+  };
+  const result=recoverRepeatedSheetChoice({
+    observation,action:{action:"click",target_id:1},repeatCount:2,
+    task:"Télécharge l'animation en Both sheets (.zip)",
+  });
+  assert.equal(result.action.target_id,2);
+});
+
+test("recovery refuses ambiguous, disabled, off-domain, destructive controls", () => {
+  const base = {
+    url:"https://slots.renderwolf.ai/games/example/extra/animation",
+    controls:[
+      {id:1,tag:"button",text:"4×4"},
+      {id:2,tag:"button",text:"Download",disabled:true},
+    ],
+  };
+  const args={observation:base, action:{action:"click",target_id:1},
+    repeatCount:3,task:"Télécharge cette animation"};
+  assert.equal(recoverRepeatedSheetChoice(args),null);
+  assert.equal(recoverRepeatedSheetChoice({
+    ...args,observation:{...base,url:"https://slots.renderwolf.ai/dashboard"},
+  }),null);
+  assert.equal(recoverRepeatedSheetChoice({...args,task:"Réponds à un message"}),null);
+  assert.equal(recoverRepeatedSheetChoice({
+    ...args,observation:{...base,controls:[
+      {id:1,tag:"button",text:"4×4"},
+      {id:2,tag:"button",text:"Download"},
+      {id:3,tag:"button",text:"Download"},
+    ]},
+  }),null);
 });
