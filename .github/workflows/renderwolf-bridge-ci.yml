@@ -33,6 +33,7 @@ jobs:
       - name: Chromium adapter and Chrome extension syntax checks
         run: |
           node --check tools/renderwolf-browser/cli.mjs
+          node --check tools/renderwolf-browser/inspector.mjs
           node --check tools/renderwolf-browser/session.mjs
           node --check tools/renderwolf-browser/chrome-extension/popup.js
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('tools/renderwolf-browser/chrome-extension/manifest.json'));if(m.manifest_version!==3||m.host_permissions.some(x=>!x.includes('renderwolf.ai')))process.exit(1)"
