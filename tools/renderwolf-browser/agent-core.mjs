@@ -126,6 +126,11 @@ export function canInspectAction(action, target, observation) {
   if (onDashboard && target.role === "button" && target.tag === "div" &&
       /^\d+\s+assets?\s+.+\btheme\b/i.test(label)) return true;
 
+  // The sidebar toggle is a reversible local navigation affordance, not a
+  // credit-consuming action. Scope it to an authenticated game workspace.
+  if (target.tag === "button" && label === "toggle sidebar" &&
+      /\/games\/[^/]+\//.test(observation?.url || "")) return true;
+
   if (target.tag === "a") return true; // URL validated again by Playwright
   if (target.role === "tab") return true;
   return /^(?:back|home|projects?|my games|games|dashboard|overview|assets?|design|characters?|symbols?|animations?|gallery|library|editor|open|view|details|continue|next|previous|close|menu|more|settings|navigation)$/.test(label);
