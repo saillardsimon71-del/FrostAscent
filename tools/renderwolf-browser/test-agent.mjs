@@ -428,3 +428,17 @@ test("game /player stale dashboard shell times out rather than sending model act
   // Previous export and generic readiness behavior are not affected.
   assert.equal(isUsefulObservation(old),true);
 });
+
+
+test("direct player-page inspection can safely dismiss the known upgrade overlay",()=>{
+  const observation={
+    url:"https://slots.renderwolf.ai/games/1785165208846/player",
+    context:["Upgrade Required Subscribe to unlock full access"],
+    controls:[{tag:"button",label:"Subscribe Now"},{tag:"button",label:"Maybe Later"}],
+  };
+  assert.equal(hasGameWorkspaceControls(observation),true);
+  assert.equal(isUsefulObservation(observation,{requireGameWorkspace:true}),true);
+  assert.equal(canInspectAction({action:"click",target_id:1},observation.controls[1],observation),true);
+  assert.equal(canInspectAction({action:"click",target_id:0},observation.controls[0],observation),false);
+  assert.equal(hasGameWorkspaceControls({...observation,context:["Frost Ascent"]}),false);
+});
