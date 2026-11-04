@@ -166,15 +166,20 @@ export async function runAgent(opts, deps = {}) {
     const history = [];
     for (let i = 0; i < opts.maxSteps; i++) {
       steps++;
+      const onGamePlayer = opts.mode === "inspect" &&
+        /\/games\/[^/]+\/player(?:\/|$)/.test(new URL(page.url()).pathname);
       const pending = await waitForRenderwolfUI(page, observeRenderwolfPage, {
         requireAnimationDownload: i === 0 && opts.startUrl.endsWith("/extra/animation"),
+        requireGameWorkspace: onGamePlayer,
       });
       const observation = pending.observation;
       if (pending.polls > 1) console.log("UI readiness polling: " + pending.polls + " checks");
       if (!pending.ready) {
         const diagnostic = await writeEmptyPageDiagnostics(page, opts.outputDir);
         console.log("RenderWolf interface not ready. Diagnostic screenshot: " + diagnostic.screenshotPath);
-        completion = "RenderWolf UI not ready; screenshot and diagnostic JSON saved locally";
+        completion = onGamePlayer
+          ? "Player route showed only dashboard controls (no verified game workspace); screenshot saved. Do not retry the dashboard card."
+          : "RenderWolf UI not ready; screenshot and diagnostic JSON saved locally";
         break;
       }
       console.log("Step " + steps + "/" + opts.maxSteps +
