@@ -14,6 +14,12 @@ export const DEFAULT_READINESS_INTERVAL_MS = 750;
 export function hasGameWorkspaceControls(observation) {
   if (!/\/games\/[^/]+\//.test(observation?.url || "")) return false;
   const controls = observation?.controls || [];
+  // A dismissible upsell can appear before the game workspace is available.
+  // Expose only that safe decision to the model; never assume it means creation is enabled.
+  if ((observation?.context || []).some(x => /upgrade required/i.test(x)) &&
+      controls.some(c => /^maybe later$/i.test([c.label,c.text].filter(Boolean).join(" ").trim()))) {
+    return true;
+  }
   return controls.some(control => {
     const label = [control.label, control.title, control.text]
       .filter(Boolean).join(" ").trim().toLowerCase();
