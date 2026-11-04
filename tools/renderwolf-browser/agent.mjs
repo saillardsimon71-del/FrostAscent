@@ -20,6 +20,7 @@ import { requestDeepSeekAction, SYSTEM_POLICY } from "./deepseek-client.mjs";
 import { safeFilename } from "./core.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 import { createDownloadTracker, isFinalDownloadButton } from "./agent-download.mjs";
+import { recoverRepeatedSheetChoice } from "./agent-export-recovery.mjs";
 
 async function confirmGeneration(control) {
   if (!stdin.isTTY) return false;
@@ -180,11 +181,22 @@ export async function runAgent(opts, deps = {}) {
       // Report token usage for cost visibility, but do NOT stop at an arbitrary
       // aggregate token budget. Work is bounded by maxSteps and action safety.
       totalTokens += result.usage?.total_tokens || 0;
-      const clickFingerprint = actionFingerprint(observation, result.action);
+      const modelFingerprint = actionFingerprint(observation, result.action);
+      const modelRepeatCount = countSameClick(
+        previousClickFingerprint, sameClickCount, modelFingerprint
+      );
+      const recovery = recoverRepeatedSheetChoice({
+        observation, action: result.action, repeatCount: modelRepeatCount, task: opts.task,
+      });
+      const actualAction = recovery ? recovery.action : result.action;
+      if (recovery) {
+        console.log("Safe export recovery: " + recovery.reason);
+      }
+      const clickFingerprint = actionFingerprint(observation, actualAction);
       const proposedCount = countSameClick(
         previousClickFingerprint, sameClickCount, clickFingerprint
       );
-      const target = observation.controls.find(c => c.id === result.action?.target_id);
+      const target = observation.controls.find(c => c.id === actualAction?.target_id);
       const label = [target?.label, target?.title, target?.text]
         .filter(Boolean).join(" ").slice(0, 90);
       if (clickFingerprint && proposedCount > MAX_SAME_CLICK) {
@@ -200,12 +212,13 @@ export async function runAgent(opts, deps = {}) {
       }
       previousClickFingerprint = clickFingerprint;
       sameClickCount = proposedCount;
-      console.log("Proposed action: " + String(result.action?.action || "unknown") +
+      console.log("Proposed action: " + String(actualAction?.action || "unknown") +
         (label ? " [" + label + "]" : ""));
-      actionTrace.push({ step: steps, action: String(result.action?.action || "unknown"), target: label });
+      actionTrace.push({ step: steps, action: String(actualAction?.action || "unknown"), target: label, recovery: !!recovery });
       let toolOutput;
       try {
-        toolOutput = await performAction(page, opts, observation, result.action, downloadTracker);
+        toolOutput = await performAction(page, opts, observation, actualAction, downloadTracker);
+        if (recovery) toolOutput.recovery = recovery.reason;
       } catch (error) {
         // Never send exception stack, browser URL parameters, secrets or page HTML.
         toolOutput = { action: "error", ok: false, reason: String(error.message).slice(0, 180) };
