@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseAgentArgs, validateAgentAction, classifyControl,
   publicPageUrl, readLocalDeepSeekKey, redactForModel, canInspectAction } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
-import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls, hasDesignWorkspaceControls } from "./agent-ready.mjs";
+import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls, hasDesignWorkspaceControls, hasFreshInterface } from "./agent-ready.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 import { recoverRepeatedSheetChoice } from "./agent-export-recovery.mjs";
 
@@ -487,4 +487,45 @@ test("direct /design route can dismiss existing non-purchasing upgrade offer",()
   assert.equal(canInspectAction({action:"click",target_id:1},offer.controls[1],offer),true);
   assert.equal(canInspectAction({action:"click",target_id:0},offer.controls[0],offer),false);
   assert.equal(hasDesignWorkspaceControls({...offer,context:["Frost Ascent"]}),false);
+});
+
+
+test("Add Element transition accepts a newly loaded creation wizard, not gallery controls", async()=>{
+  const before={url:"https://slots.renderwolf.ai/games/1785165208846/design",
+    context:["Frost Ascent","Chat with Lucky"],
+    controls:[
+      {tag:"a",label:"Add Element"},
+      {tag:"a",label:"Design"},
+      {tag:"a",label:"The Yeti Guardian"},
+      {tag:"button",label:"Toggle sidebar"},
+    ]};
+  const waiting={...before,url:"https://slots.renderwolf.ai/games/1785165208846/design/create",
+    controls:[before.controls[1],before.controls[3]]};
+  const wizard={...waiting,context:["Frost Ascent","New Element"],
+    controls:[...waiting.controls,
+      {tag:"input",placeholder:"Element name"},
+      {tag:"button",label:"Generate Image"}]};
+  assert.equal(hasFreshInterface(waiting,before),false);
+  assert.equal(isUsefulObservation(waiting,{requireFreshFrom:before,requireDesignWorkspace:true}),false);
+  assert.equal(hasDesignWorkspaceControls(wizard),false); // old gallery check won't pass
+  assert.equal(hasFreshInterface(wizard,before),true);
+  assert.equal(isUsefulObservation(wizard,{requireFreshFrom:before,requireDesignWorkspace:true}),true);
+  let polled=0;
+  const found=await waitForRenderwolfUI({waitForTimeout:async()=>{}},
+    async()=>++polled<4?waiting:wizard,{
+      attempts:5,intervalMs:0,requireFreshFrom:before,requireDesignWorkspace:true,
+    });
+  assert.equal(found.ready,true);
+  assert.equal(found.polls,4);
+});
+
+test("Add Element transition does not mistake unchanged global sidebar for a new form",async()=>{
+  const old={url:"https://slots.renderwolf.ai/games/1785165208846/design",
+    context:["Frost Ascent"],
+    controls:[{tag:"a",label:"Design"},{tag:"button",label:"Toggle sidebar"}]};
+  const stale={...old,url:"https://slots.renderwolf.ai/games/1785165208846/design/create"};
+  assert.equal(hasFreshInterface(stale,old),false);
+  const result=await waitForRenderwolfUI({waitForTimeout:async()=>{}},async()=>stale,
+    {attempts:3,intervalMs:0,requireFreshFrom:old,requireDesignWorkspace:true});
+  assert.equal(result.ready,false);
 });
