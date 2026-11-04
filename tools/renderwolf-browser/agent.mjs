@@ -330,7 +330,13 @@ export async function runAgent(opts, deps = {}) {
       }
       if (toolOutput.finished) {
         completion = toolOutput.summary;
-        status = opts.mode === "inspect" ? "inspected" : "finished-without-download";
+        // A model saying "finish" is not proof of completed inspection.
+        // In particular, never mark a reported blocker as "inspected".
+        const reportedBlocker = /blocage|bloqu|blocked|unable|cannot|can't|could not|impossible|inaccessibl|not ready/i
+          .test(completion);
+        status = opts.mode === "inspect"
+          ? (reportedBlocker ? "incomplete" : "inspected")
+          : "finished-without-download";
         break;
       }
       console.log(toolOutput.action + ": " + (toolOutput.ok ? "ok" : "blocked/failed") +
