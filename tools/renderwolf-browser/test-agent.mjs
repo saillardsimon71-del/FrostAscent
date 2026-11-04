@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseAgentArgs, validateAgentAction, classifyControl,
   publicPageUrl, readLocalDeepSeekKey, redactForModel, canInspectAction } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
-import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls, hasDesignWorkspaceControls, hasFreshInterface } from "./agent-ready.mjs";
+import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls, hasDesignWorkspaceControls, hasFreshInterface, findKnownUpsellDismissal } from "./agent-ready.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 import { recoverRepeatedSheetChoice } from "./agent-export-recovery.mjs";
 
@@ -528,4 +528,35 @@ test("Add Element transition does not mistake unchanged global sidebar for a new
   const result=await waitForRenderwolfUI({waitForTimeout:async()=>{}},async()=>stale,
     {attempts:3,intervalMs:0,requireFreshFrom:old,requireDesignWorkspace:true});
   assert.equal(result.ready,false);
+});
+
+
+test("recognizes exactly one explicit Maybe Later button only on the known upsell", () => {
+  const offer = {
+    url: "https://slots.renderwolf.ai/games/1785165208846/design",
+    context: ["Upgrade Required", "Subscribe to unlock full access"],
+    controls: [
+      {id:0,tag:"button",label:"Subscribe Now"},
+      {id:1,tag:"button",label:"Maybe Later",disabled:false},
+    ],
+  };
+  assert.equal(findKnownUpsellDismissal(offer)?.id,1);
+  assert.equal(findKnownUpsellDismissal({...offer,context:["Frost Ascent"]}),null);
+  assert.equal(findKnownUpsellDismissal({...offer,controls:[
+    {id:0,tag:"button",label:"Subscribe Now"},
+  ]}),null);
+  assert.equal(findKnownUpsellDismissal({...offer,controls:[
+    {id:1,tag:"button",label:"Maybe Later",disabled:true},
+  ]}),null);
+  assert.equal(findKnownUpsellDismissal({...offer,controls:[
+    {id:1,tag:"button",label:"Maybe Later"},
+    {id:2,tag:"button",label:"Maybe Later"},
+  ]}),null);
+  assert.equal(findKnownUpsellDismissal({...offer,controls:[
+    {id:1,tag:"a",label:"Maybe Later"},
+  ]}),null);
+  assert.equal(findKnownUpsellDismissal({...offer,controls:[
+    {id:1,tag:"button",label:"Subscribe Now"},
+    {id:2,tag:"button",label:"Add credits"},
+  ]}),null);
 });
