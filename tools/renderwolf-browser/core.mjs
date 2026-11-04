@@ -30,6 +30,17 @@ export function validateConfig(obj) {
   return { url: url.href, selectors };
 }
 
+export function validateStartUrl(raw) {
+  let url;
+  try { url = new URL(raw); } catch { throw new TypeError("Invalid --start-url"); }
+  if (url.protocol !== "https:" ||
+      !(url.hostname === "renderwolf.ai" || url.hostname.endsWith(".renderwolf.ai")) ||
+      url.username || url.password || url.search || url.hash) {
+    throw new TypeError("--start-url must be an HTTPS RenderWolf URL without credentials, query or fragment");
+  }
+  return url.href;
+}
+
 export function parseArgs(argv) {
   const [action, ...args] = argv;
   if (!["inspect", "generate", "export", "full"].includes(action)) {
@@ -43,6 +54,7 @@ export function parseArgs(argv) {
     "--output-dir": "outputDir",
     "--profile": "profile",
     "--session-file": "sessionFile",
+    "--start-url": "startUrl",
   };
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
@@ -54,6 +66,7 @@ export function parseArgs(argv) {
     } else throw new TypeError("Unknown option: " + flag);
   }
   if (!opts.config) throw new TypeError("--config is required");
+  if (opts.startUrl) opts.startUrl = validateStartUrl(opts.startUrl);
   if (opts.sessionFile && opts.profile) {
     throw new TypeError("Use --session-file or --profile, not both");
   }
