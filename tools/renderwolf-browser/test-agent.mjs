@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseAgentArgs, validateAgentAction, classifyControl,
   publicPageUrl, readLocalDeepSeekKey, redactForModel, canInspectAction } from "./agent-core.mjs";
 import { parseDeepSeekAction, requestDeepSeekAction, ACT_TOOL } from "./deepseek-client.mjs";
-import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls } from "./agent-ready.mjs";
+import { waitForRenderwolfUI, isUsefulObservation, hasGameWorkspaceControls, hasDesignWorkspaceControls } from "./agent-ready.mjs";
 import { actionFingerprint, countSameClick, MAX_SAME_CLICK } from "./agent-stall.mjs";
 import { recoverRepeatedSheetChoice } from "./agent-export-recovery.mjs";
 
@@ -441,4 +441,39 @@ test("direct player-page inspection can safely dismiss the known upgrade overlay
   assert.equal(canInspectAction({action:"click",target_id:1},observation.controls[1],observation),true);
   assert.equal(canInspectAction({action:"click",target_id:0},observation.controls[0],observation),false);
   assert.equal(hasGameWorkspaceControls({...observation,context:["Frost Ascent"]}),false);
+});
+
+
+test("game sidebar toggle is reversible navigation, not a generation action",()=>{
+  const inspect={url:"https://slots.renderwolf.ai/games/1785165208846/design",
+    context:["Frost Ascent"],controls:[]};
+  const toggle={tag:"button",label:"Toggle sidebar"};
+  assert.equal(canInspectAction({action:"click",target_id:1},toggle,inspect),true);
+  assert.equal(canInspectAction({action:"click",target_id:1},toggle,
+    {...inspect,url:"https://slots.renderwolf.ai/dashboard"}),false);
+  assert.equal(canInspectAction({action:"click",target_id:1},
+    {tag:"button",label:"Generate"},inspect),false);
+  assert.equal(canInspectAction({action:"click",target_id:1},
+    {tag:"button",label:"Subscribe Now"},inspect),false);
+});
+
+test("direct design route waits for assets instead of using global navigation",async()=>{
+  const shell={url:"https://slots.renderwolf.ai/games/1785165208846/design",
+    controls:[
+      {tag:"button",label:"Toggle sidebar"},
+      {tag:"a",label:"Design"},
+      {tag:"a",label:"Download"},
+      {tag:"a",label:"Publish"},
+    ]};
+  const ready={...shell,controls:[...shell.controls,
+    {tag:"a",label:"Add Element"},{tag:"a",label:"The Yeti Guardian"}]};
+  assert.equal(hasDesignWorkspaceControls(shell),false);
+  assert.equal(isUsefulObservation(shell,{requireDesignWorkspace:true}),false);
+  assert.equal(hasDesignWorkspaceControls(ready),true);
+  let calls=0;
+  const result=await waitForRenderwolfUI({waitForTimeout:async()=>{}},
+    async()=>++calls<4?shell:ready,
+    {attempts:5,intervalMs:0,requireDesignWorkspace:true});
+  assert.equal(result.ready,true);
+  assert.equal(result.polls,4);
 });
